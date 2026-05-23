@@ -329,19 +329,62 @@ Qwen3.5-27B 内置 MTP 架构 (1 层 draft model)，启用命令：
 ./scripts/mtp.sh stop      # 停止
 ./scripts/mtp.sh status    # 状态
 ./scripts/mtp.sh log 0     # 查看 node_0 日志
-./bench.sh mtp 1 5         # MTP benchmark
+./bench.sh mtp 1 5         # MTP Benchmark
 ```
 
 **关键参数**:
 - `--draft_model /home/data/weights/Qwen35-27B-mtp` — MTP draft 权重
 - `--draft_devices npu:N` — 每个节点的 draft device 必须匹配主 device
-- `--num_speculative_tokens 2` — 投机 token 数
+- `--num_speculative_tokens 1` — **推荐值** (实测最优，详见下方)
 - `--max_concurrent_requests 30`
 
-**已知问题 (2026-05-23)**:
-MTP 模式下 node_1 推理时崩溃，`npu_add_rms_norm` shape 不匹配错误 (error code 561002)。
-可能是 torch_npu 2.7.1.post2 与 xLLM MTP 实现不兼容。
-已向 xLLM 团队上报，等待修复。详见 `xllm-npu-incident-triage` skill。
+#### 实测性能对比 (2026-05-23, xLLM 82a407db, 同代码对比)
+
+**真实 JD 数据集 (20K input, ~1K output)**:
+
+| 配置 | Throughput | TTFT | TPOT | Accept Rate | vs Baseline |
+|------|-----------|------|------|-------------|-------------|
+| Baseline | 29.88 tok/s | 3895ms | 29.6ms | - | - |
+| **MTP nst=1** | **36.11 tok/s** | 3954ms | 23.4ms | 47.7% | **+21%** ✓ |
+| MTP nst=2 | 14.47 tok/s | 6899ms | 44.6ms | 61.4% | -52% ✗ |
+
+**随机数据集 (20K input, 1K output)**:
+
+| 配置 | Throughput | TTFT | TPOT | Accept Rate | vs Baseline |
+|------|-----------|------|------|-------------|-------------|
+| Baseline | 29.70 tok/s | 3865ms | 29.5ms | - | - |
+| **MTP nst=1** | **36.62 tok/s** | 3890ms | 23.1ms | 49.4% | **+23%** ✓ |
+
+#### 关键发现
+
+1. **nst=1 是 Qwen3.5-27B 在 910B3 上的最优 MTP 配置**
+   - 比 baseline 吞吐提升 20-23%
+   - TTFT 几乎无惩罚 (+25ms)
+   - TPOT 降低 22% (23ms vs 29ms)
+
+2. **nst=2 是严重负优化 (-52%)**
+   - 根因：draft model prefill + 2-token verification 引入 +6124ms TTFT 惩罚
+   - reserved_linear_bytes 暴涨 (6.82GB vs baseline 2.29GB)
+   - 远超 decode 阶段每迭代多 0.68 token 的收益
+
+3. **数据集对 accept rate 影响很小** (JD 47.7% vs random 49.4%)
+   - nst=1 只赌 1 个 token，容错空间大
+   - 两套数据集结论一致 (+21% vs +23%)，说明收益稳健
+
+#### 配置建议
+
+```bash
+# 推荐：nst=1 (已验证为正向优化)
+--num_speculative_tokens 1
+
+# 不推荐：nst>=2 (实测为严重负优化)
+--num_speculative_tokens 2  # ❌ TTFT 惩罚过大，吞吐腰斩
+```
+
+#### 已知问题 (已修复)
+
+~~MTP 模式下 node_1 推理时崩溃，`npu_add_rms_norm` shape 不匹配错误~~
+已在 xLLM commit `7b962725` (preview/qwen3.5-qwen3.6 分支) 中修复。
 
 ---
 

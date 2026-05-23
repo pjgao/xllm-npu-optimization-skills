@@ -189,6 +189,23 @@ python scripts/render_triage_npu.py \
 - [references/npu-overlap-catalog.md](references/npu-overlap-catalog.md) — NPU 重叠机会目录
 - [references/ascend-profiling-formats.md](references/ascend-profiling-formats.md) — 昇腾 Profiling 数据格式
 
+## MTP 相关性能检查要点
+
+当分析 MTP (Multi-Token Prediction) 相关 profiling trace 时，额外检查：
+
+| 检查维度 | 健康值 | 异常信号 |
+|---------|-------|---------|
+| `--num_speculative_tokens` | `nst=1` | `nst>=2` 在 Qwen3.5-27B + 910B3 上实测为严重负优化 |
+| Spec Accept Rate | 47-50% | <40% 表明 draft 质量或 nst 设置不当 |
+| Decoded Tok/Iter | 1.88-1.98 (nst=1 理论最大 2) | <1.5 需检查 draft model 加载 |
+| reserved_linear_bytes | <3 GB (nst=1) | >6 GB 表明 draft+verification 内存压力大 |
+| KV Cache blocks | ≥80% baseline | <60% 表明 draft model 挤占了主 model KV 空间 |
+| Prefill warmup 时间 | ≤baseline | 2x baseline → draft prefill penalty 主导延迟 |
+
+**关键结论 (Qwen3.5-27B @ 910B3)**:
+- `nst=1`：吞吐 +20-23%，TTFT 零惩罚，TPOT -22%，**推荐使用**
+- `nst=2`：吞吐 -52%，TTFT +77%，**不推荐**（per-token decode 更快但 TTFT 惩罚主导总延迟）
+
 ## 输出契约
 
 返回：

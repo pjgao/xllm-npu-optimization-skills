@@ -78,6 +78,45 @@ python ../xllm-npu-optimization-skills/model-pr-optimization-history/scripts/que
 - `model-pr-optimization-history/xllm/qwen3-core.md` — Qwen3 系列 (Dense)
 - `model-pr-optimization-history/xllm/glm-5.md` — GLM-5 系列
 
+## MTP 配置调优案例 (Qwen3.5-27B @ 910B3, 2026-05-23)
+
+完整过程记录：
+
+```
+初始配置:
+  --num_speculative_tokens 2 (nst=2)
+  
+预期: +50-80% 吞吐提升（每迭代多 2 token）
+
+实测结果 (JD 真实数据集):
+  Throughput: 14.47 tok/s vs baseline 29.88 tok/s → -52% 严重退化
+  TTFT: 6899ms vs 3895ms → +77%
+  TPOT: 44.6ms vs 29.6ms → +51%
+  Accept Rate: 61.4% (看似良好)
+  
+根因分析:
+  1. reserved_linear_bytes: 6.82GB (MTP) vs 2.29GB (baseline)，+4.5GB
+     → gated_delta_net state 维护开销
+  2. Prefill warmup 时间翻倍: 14052ms vs 7928ms
+     → draft model prefill + 2-token verification = +6.1s
+  3. 短输出场景 (avg 500-700 tok) TTFT 惩罚无法摊薄
+  
+解决方案:
+  切换到 nst=1
+  
+调整后实测 (JD + random 数据集):
+  Throughput: +20-23% (36.11 / 36.62 tok/s)
+  TTFT: +0.6% (几乎无惩罚)
+  TPOT: -22% (23.4ms vs 29.6ms)
+  Accept Rate: 47-49%
+  
+经验教训:
+  - nst=2 的 TTFT 惩罚远大于 decode 阶段的每 iteration 收益
+  - Qwen3.5-27B 的 gated_delta_net 层在 MTP 模式下内存压力大
+  - nst=1 是当前 910B3 上的最佳 balance point
+  - 性能对比必须用同代码版本（控制变量）
+```
+
 ## 维护
 
 模型档案应随新 PR 合并而更新。建议：
