@@ -381,6 +381,30 @@ Qwen3.5-27B 内置 MTP 架构 (1 层 draft model)，启用命令：
 --num_speculative_tokens 2  # ❌ TTFT 惩罚过大，吞吐腰斩
 ```
 
+#### 参数探索实验 (5 组对比)
+
+在 baseline + MTP nst=1 之外，尝试了 5 组参数调优（均为单请求 parallel=1，number=3），**全部无效或负向**：
+
+| 实验 | 参数变更 | Throughput | TTFT | TPOT | vs Baseline |
+|------|----------|-----------|------|------|-------------|
+| **Baseline** | 默认配置 | 29.88 tok/s | 3895ms | 29.6ms | - |
+| **MTP nst=1** | + speculative decoding | **36.11 tok/s** | 3954ms | 23.4ms | **+21% ✓** |
+| Exp A1 | chunked_prefill_size=1024 | 29.41 tok/s | 4663ms | 29.4ms | -2% ✗ |
+| Exp B1 | max_memory_utilization=0.85 | 28.84 tok/s | 4677ms | 29.4ms | -4% ✗ |
+| Exp C1 | graph_mode=PREFILL_PIECEWISE | 28.78 tok/s | 4639ms | 29.3ms | -4% ✗ |
+| Exp D1 | decode_no_padding=True | 29.09 tok/s | 4656ms | 29.4ms | -3% ✗ |
+| Exp E1 | max_seqs_per_batch=32 | 28.21 tok/s | 4624ms | 29.3ms | -6% ✗ |
+
+**全部失败的根因分析**：
+
+- **Exp A (chunked prefill)**: 所有 chunk size (1024/2048/4096/8192) 均导致 TTFT 增加 20%，说明当前 20K single-chunk prefill 已是最优，chunking 增加调度开销而非降低
+- **Exp B (memutil)**: 单请求场景下 KV cache 容量不是瓶颈，增大 util 无收益
+- **Exp C (prefill piecewise)**: 20K prefill 已走 npugraph_ex compile+run 路径，PIECEWISE 模式反而增加图编译开销但不降低 decode
+- **Exp D (decode no padding)**: decode 阶段无 padding，对单请求无影响；多请求场景中 batch padding 开销也极小
+- **Exp E (max_seqs_per_batch)**: 单请求场景下 max_seqs=16 足以，增大 batch 容量反而增加调度开销
+
+**结论**：对于 Qwen3.5-27B + TP=2 + 910B3，唯一有效优化路径是 MTP nst=1 (+21%)；参数层面的调整空间已用尽，后续需 profiling 分析 kernel-level 瓶颈。
+
 #### 已知问题 (已修复)
 
 ~~MTP 模式下 node_1 推理时崩溃，`npu_add_rms_norm` shape 不匹配错误~~

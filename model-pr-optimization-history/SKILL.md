@@ -117,6 +117,31 @@ python ../xllm-npu-optimization-skills/model-pr-optimization-history/scripts/que
   - 性能对比必须用同代码版本（控制变量）
 ```
 
+### Case 2: 参数探索实验（chunked_prefill_A1/E1），全部失败 (2026-05-23)
+
+```
+背景:
+  在 MTP nst=1 取得 +21% 之后，尝试 5 组参数调优继续压缩性能空间
+
+实验设计:
+  A1: chunked_prefill_size = 1024
+  B1: max_memory_utilization = 0.85（默认 0.7）
+  C1: graph_mode = PREFILL_PIECEWISE
+  D1: decode_no_padding = True
+  E1: max_seqs_per_batch = 32（默认 16）
+
+结果: 全部无效或负向（-2% ~ -6%）
+
+根因:
+  - 单请求场景下，KV cache 容量、batch 调度开销均非瓶颈
+  - 20K single-chunk prefill 已是最优，chunking 增加调度开销而非降低 TTFT
+  - 所有实验的 TTFT 都比 baseline 高 20%（4639~4677ms vs 3895ms），
+    说明这些参数在 prefill 阶段引入了额外 overhead
+
+结论:
+  参数层调优空间已用尽，需 profiling 进入 kernel-level 分析
+```
+
 ## 维护
 
 模型档案应随新 PR 合并而更新。建议：
