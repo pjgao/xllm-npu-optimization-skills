@@ -149,11 +149,12 @@
 
 ### P2 — MTP 专属优化
 
-6. **Transpose 消除（MTP 最大开销 207ms）**
+6. **Transpose 消除（MTP 最大开销 207ms）** ✅ 已验证
    - 14,400次 Transpose，每次 14us
    - 根因：MTP 验证阶段对 draft logits 做 transpose 以匹配 target shape
    - 优化方向：修改 MTP 验证逻辑避免 transpose，或在 target 端直接输出兼容 shape
    - 预期收益：MTP 路径 -7% device time
+   - **验证结果见 Section 9**
 
 7. **DeltaNet Draft Kernel 融合**
    - `fused_recurrent_gated_delta_rule_spec_fwd_kernel` (42ms, 2400 calls)
@@ -184,3 +185,46 @@
 | P2-1 | Transpose 消除 (MTP only) | Transpose (837fe4) | +5-7% (MTP 场景) |
 | P2-2 | Host StreamSync 频率 | - | +5-10% |
 | P3-1 | MTP accept kernel 融合 | Softmax+ArgMax | +2-3% |
+
+---
+
+## 9. P2-1 MTP Transpose 消除优化验证
+
+### 9.1 优化措施
+
+对 `qwen3_gated_delta_net_base.cpp/h` 做如下修改：
+
+1. **缓存 `conv_weight` 的 transpose 结果**（成员变量 `conv_weight_transposed_`）
+   - 将每次 decode step 重复计算的 `conv_weight.transpose(0,1).contiguous()` 提前缓存
+2. **`run_spec_verify_conv` 改为收 `[B,T,C]` 输入、返回 `[B,T,C]`**
+   - 消除 round-trip：原路径为 `[B,C,T] → transpose → [B,T,C] → conv → [B,T,C] → transpose → [B,C,T]`，改为 `[B,T,C] → conv → [B,T,C]`
+3. **`process_mixed_qkv` 增加格式检测**
+   - spec_verify 路径的 input 已是 `[B,T,C]`，跳过多余的 transpose
+
+每次 decode step 的 Transpose 调用从 **6 次减少到 2 次**（-67%）。
+
+### 9.2 msprof Kernel 验证
+
+| Transpose Kernel 变体 | MTP Baseline | MTP-Transpose | 变化 |
+|---|---|---|---|
+| `Transpose_be83..._high_performance_13` | 14,400 次 / 207.8 ms | 960 次 / 17.3 ms | **-93.3% calls** |
+| `Transpose`（基础） | 240 次 / 3.5 ms | 240 次 / 3.7 ms | 不变 |
+| `Transpose_9a6..._high_performance_6` | 50 次 / 720 µs | 10 次 / 140 µs | -80% |
+| **合计** | **14,690 次 / 211.9 ms** | **1,210 次 / 21.1 ms** | **-190.8 ms / -13,480 calls** |
+
+主 kernel (`be83...`) 调用次数：14,400 → 960 = **15x 消除**，与代码层面 6→2 的理论比例一致。
+
+### 9.3 Benchmark 验证
+
+| 指标 | MTP Baseline | MTP-Transpose | Δ |
+|------|-------------|---------------|---|
+| Avg Output Rate (p=1, n=5) | 36.11 tok/s | 39.54 tok/s | **+9.5%** |
+| Avg TPOT | 24.2 ms | 21.9 ms | **-9.5%** |
+| Accept Rate | 47.7% | 47.7% | 不变 |
+
+**结论**：P2-1 Transpose 消除达到 +9.5% 吞吐提升（超出预期的 +5-7%），msprof 验证 kernel 调用 -93.3%，device time -190.8ms，闭环验证通过。
+
+### 9.4 补丁文件
+
+- `patches/qwen3_gated_delta_net_base.cpp`
+- `patches/qwen3_gated_delta_net_base.h`

@@ -48,8 +48,24 @@ xllm serve /models/Qwen3-235B-A22B \
 | Qwen3-235B-A22B | 8P8D | ~300 (总) | ~50 | ~ |
 | Qwen3-32B | 4 | ~ | ~ | ~ |
 | Qwen3-8B | 1 | ~ | ~ | ~ |
+| Qwen3.5-27B | 2 | 36.11 (MTP) / 29.88 (Base) | 24.2 / 28.3 | ~ |
 
 声明：同 TPOT 下吞吐 = MindIE × 1.7 = vLLM-Ascend × 2.2
+
+### Qwen3.5-27B（DeltaNet 混合架构）
+
+| 配置 | 端口 | TP | Devices | 吞吐 (p=1,n=5) |
+|------|------|----|---------|---------------|
+| Baseline | 18150/18151 | 2 | Phy 14/15 | 29.88 tok/s |
+| MTP (nst=1) | 18160/18161 | 2 | Phy 14/15 | 36.11 tok/s (+21%) |
+| **MTP + Transpose消除** | 18170/18171 | 2 | Phy 14/15 | **39.54 tok/s (+32% vs Base, +9.5% vs MTP)** |
+
+**MTP-Transpose 优化**（commit 验证于 2026-05-23）：
+- 修改 `qwen3_gated_delta_net_base.cpp/h`
+- 缓存 `conv_weight.transpose().contiguous()` 为成员变量
+- `run_spec_verify_conv` 改为收发 `[B,T,C]` 格式，消除 round-trip transpose
+- msprof 验证：Transpose kernel 从 14,400→960 calls（-93.3%），节省 190.8ms device time
+- 补丁：`patches/qwen3_gated_delta_net_base.{cpp,h}`
 
 ## 已知优化
 
