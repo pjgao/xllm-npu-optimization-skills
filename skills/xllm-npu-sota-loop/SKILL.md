@@ -69,8 +69,22 @@ mkdir -p runs/$(date +%Y%m%d)_<model_slug>_npu_sota/{benchmark,profiles,analysis
 
 ```text
 > 在 A3 NPU 上，使用 benchmark skill 对 xLLM 和 vLLM-Ascend 进行公平对比
-> 模型：<model>，工作负载：chat(1000→1000) + summary(8000→1000)
+> 模型：<model>，工作负载：真实流量 JSONL (line_by_line)
 > 搜索层级：Tier 2
+```
+
+**推荐 benchmark 工具**: evalscope (`pip install evalscope`)
+
+```bash
+evalscope perf \
+  --model <model_name> \
+  --url http://127.0.0.1:<port>/v1/chat/completions \
+  --api openai \
+  --dataset line_by_line \
+  --dataset-path /path/to/dataset.jsonl \
+  --parallel 1 --number 5 \
+  --connect-timeout 120 --read-timeout 300 \
+  --outputs-dir $RUN_ROOT/benchmark/baseline/parallel_1_number_5/
 ```
 
 规则：
@@ -79,9 +93,9 @@ mkdir -p runs/$(date +%Y%m%d)_<model_slug>_npu_sota/{benchmark,profiles,analysis
 - 记录完整启动命令
 
 产出：
-- `benchmark/candidates.jsonl` — 所有候选
-- `benchmark/summary.md` — 对比结果
-- `benchmark/winning-commands.md` — 最优配置命令
+- `benchmark/*/benchmark_summary.json` — 汇总指标
+- `benchmark/*/benchmark_percentile.json` — 延迟百分位
+- `benchmark/*/perf_report.html` — HTML 报告
 
 ## Phase 2: 差异判定（阈值 1%）
 

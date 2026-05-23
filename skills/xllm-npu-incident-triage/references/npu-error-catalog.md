@@ -51,6 +51,12 @@
 | E10001 | DEVICE_NOT_FOUND | NPU 设备未找到 | 驱动问题/设备不可见 | npu-smi info、检查 ASCEND_RT_VISIBLE_DEVICES |
 | E10002 | DEVICE_BUSY | NPU 被占用 | 其他进程占用 | 杀掉其他进程或换设备 |
 
+### torch_npu 自定义算子错误 (aclnn)
+
+| 错误码 | 名称 | 描述 | 常见原因 | 解决建议 |
+|--------|------|------|---------|---------|
+| 561002 | aclnnAddRmsNorm shape mismatch | AddRmsNorm tiling 失败 | x1/x2 shape 不匹配 (residual connection) | 检查 MTP/draft model hidden_dim 是否与 target 一致; torch_npu 版本是否支持 MTP |
+
 ## 错误排查流程
 
 ```

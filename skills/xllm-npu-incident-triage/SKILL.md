@@ -224,3 +224,42 @@ npu-smi info -t memory
 - [references/npu-error-catalog.md](references/npu-error-catalog.md) — 完整 NPU 错误码目录
 - [references/replay-workflow.md](references/replay-workflow.md) — 复现工作流模板
 - [references/ascend-profiling-formats.md](../xllm-npu-profiler/references/ascend-profiling-formats.md) — Profiling 数据格式
+
+## 实测事故案例
+
+### MTP npu_add_rms_norm Kernel Crash (2026-05-23)
+
+**环境**: 192.168.13.154 / xllm-gpj 容器 / Qwen3.5-27B + MTP draft  
+**症状**: xLLM MTP 模式下 node_1 (Phy 9) 推理时崩溃，`terminate called after throwing an instance of 'c10::Error'`  
+**错误栈**:
+
+```
+npu_add_rms_norm:build/CMakeFiles/torch_npu.dir/compiler_depend.ts:3783
+NPU function error: call aclnnAddRmsNorm failed, error code is 561002
+
+[ERROR] 2026-05-23-15:22:01 (PID:3481803, Device:0, RankID:-1) ERR00100 PTA call acl api failed.
+EZ9999: Inner Error!
+Input x2/x1 shape invaild, shape is not equal x1 shape.
+  [FUNC:CheckInputOutputShape][FILE:add_rms_norm_tiling.cpp][LINE:172]
+Input shape invalid.[FUNC:Tiling4AddRmsNorm][LINE:367]
+AddRmsNorm do tiling failed, ret is -1.
+Check NnopbaseExecutorDoTiling(executor) failed
+Check NnopbaseExecutorTilingAndUpdateBinInfo(executor) failed
+Check NnopbaseExecutorMatchCache(executor) failed
+```
+
+**根因分析**:
+1. `npu_add_rms_norm` 算子要求 x1 和 x2 shape 相同 (residual connection)
+2. MTP 模式下，draft model (1 层) 与 target model (64 层) 的 hidden_states shape 在 concat/add 时不匹配
+3. 可能是 xLLM MTP 实现未正确处理 draft/target model 的 hidden_dim 差异，或 draft model 权重 format 与 target 不一致
+
+**影响**: MTP benchmark 无法执行，阻塞 Phase 1 的 MTP vs baseline 对比
+
+**临时规避**:
+- 禁用 MTP，仅跑 baseline 模式
+- 向 xLLM 团队上报 kernel crash，附上完整日志：`/home/g00510989/runs/20260523_qwen35_27b_npu_sota/logs/mtp/node_1.log`
+
+**后续跟进**:
+- 等待 xLLM 修复 `npu_add_rms_norm` shape 匹配逻辑
+- 或升级 torch_npu 版本 (当前 2.7.1.post2 可能不兼容 MTP feature)
+- 验证修复后重新运行 `./bench.sh mtp` 对比

@@ -223,38 +223,37 @@ python /home/gaopengju/projects/xllm-npu-optimization-skills/skills/xllm-npu-ben
 
 ### 4.2 准备基准数据集
 
-工作负载定义（JSONL 格式）：
+**推荐方案**: 使用 evalscope `line_by_line` plugin + 真实流量 JSONL。
+
+**数据集格式** (每行一个完整 OpenAI 请求 body):
 
 ```jsonl
-{"prompt": "请总结以下文章...", "output_len": 1000}
-{"prompt": [{"role": "user", "content": "解释量子纠缠..."}], "output_len": 500}
+{"model": "Qwen35-27B", "messages": [{"role": "user", "content": "你好"}], "max_tokens": 2048, "temperature": 0.0, "stream": true}
+{"model": "Qwen35-27B", "messages": [{"role": "system", "content": "你是助手"}, {"role": "user", "content": "总结..."}], "max_tokens": 2048, "temperature": 0.0, "stream": true}
 ```
 
-默认场景：
-
-| 场景 | input_len | output_len | 请求数 | 说明 |
-|------|-----------|------------|--------|------|
-| chat | 1000 | 1000 | 80 | 常规对话 |
-| summary | 8000 | 1000 | 80 | 长文总结（慢场景） |
+**实测数据集**: `jd_openai_20k.jsonl` (20k 真实京东对话请求，平均 input ~19860 tokens)。
 
 SLA 约束：
 
 | 指标 | 阈值 | 说明 |
 |------|------|------|
-| max_ttft_ms | 500ms | Time To First Token |
+| max_ttft_ms | 5000ms | Time To First Token (长序列 prefill 较慢，放宽) |
 | max_tpot_ms | 50ms | Time Per Output Token |
 
 ### 4.3 xLLM 配置搜索
 
-**基础命令**：
+**基础命令** (实测, 910B3 x2 TP=2):
 
 ```bash
-xllm serve /models/Qwen3.5-27B \
-  --tensor-parallel-size 4 \
-  --graph-mode npugraph_ex \
-  --block-size 128 \
-  --max-model-len 8192 \
-  --port 8080
+# 实测启动命令 (Phy 8, NPU 14)
+/home/g00510989/xllm/xllm/build/xllm/core/server/xllm \
+  --model /home/data/weights/Qwen35-27B \
+  --tensor-parallel-size 2 \
+  --enable_graph true \
+  --block_size 128 \
+  --max_model_len 32768 \
+  --port 18160
 ```
 
 **搜索空间**（Tier 2，最多 10 个候选）：
@@ -263,35 +262,19 @@ xllm serve /models/Qwen3.5-27B \
 |------|--------|------|
 | chunked-prefill-size | 256, 512, 1024 | 分块 prefill 大小 |
 | max-num-seqs | 64, 128, 256 | 最大并发序列 |
-| gpu-memory-utilization | 0.85, 0.9, 0.95 | 显存利用率 |
+| gpu-memory-utilization | 0.7, 0.85, 0.9 | 显存利用率 (长序列需更多 KV Cache) |
 | graph-mode | npugraph_ex, ge | 图模式选择 |
+| enable_schedule_overlap | true, false | 调度重叠 |
+| communication_backend | lccl, hccl | 通信后端 |
 
-示例搜索脚本：
+**实测 baseline 结果** (2026-05-23):
 
-```bash
-# xLLM 候选 1: 默认配置
-xllm serve /models/Qwen3.5-27B \
-  --tensor-parallel-size 4 \
-  --graph-mode npugraph_ex \
-  --block-size 128 \
-  --max-num-seqs 128 \
-  --chunked-prefill-size 512 \
-  --port 8080 &
+| 并发 | 请求数 | Output Throughput | TTFT   | TPOT  | Avg Output Tokens | 成功 |
+|----|------|-------------------|--------|-------|-------------------|------|
+| 1  | 5    | 29.33 tok/s       | 3564ms | 29.8ms| 917               | 5/5  |
+| 2  | 4    | 46.83 tok/s       | 4445ms | 34.4ms| 1308              | 4/4  |
 
-# 等待启动后运行 benchmark
-# ... benchmark 完成后杀掉服务
-
-# xLLM 候选 2: 更大 chunked prefill
-xllm serve /models/Qwen3.5-27B \
-  --tensor-parallel-size 4 \
-  --graph-mode npugraph_ex \
-  --block-size 128 \
-  --max-num-seqs 256 \
-  --chunked-prefill-size 1024 \
-  --port 8080 &
-
-# ... 以此类推
-```
+结论：并发 2 吞吐 +59.7%。TPOT < 50ms SLA 满足，但 TTFT ~4s 较长 (长序列 prefill 慢)。
 
 ### 4.4 vLLM-Ascend 配置搜索
 
@@ -316,49 +299,49 @@ VLLM_WORKER_MULTIPROC_METHOD=spawn vllm serve /models/Qwen3.5-27B \
 | gpu-memory-utilization | 0.85, 0.9, 0.95 |
 | max-num-seqs | 64, 128 |
 
-### 4.5 结果对比
+### 4.5 运行 benchmark (evalscope)
 
 ```bash
-python /home/gaopengju/projects/xllm-npu-optimization-skills/skills/xllm-npu-benchmark/scripts/compare_npu_benchmark.py \
-  --xllm-results $RUN_ROOT/benchmark/xllm_results.jsonl \
-  --vllm-results $RUN_ROOT/benchmark/vllm_results.jsonl \
-  --output-dir $RUN_ROOT/benchmark/comparison/
+# 使用封装的 bench.sh 脚本
+./scripts/bench.sh baseline 1 5    # 并发 1, 5 请求
+./scripts/bench.sh baseline 2 4    # 并发 2, 4 请求
+./scripts/bench.sh mtp 1 5         # MTP 模式 (需要先启动 MTP 服务)
+
+# 结果输出到:
+# $RUN_ROOT/benchmark/baseline/parallel_1_number_5/
+# $RUN_ROOT/benchmark/baseline/parallel_2_number_4/
+# $RUN_ROOT/benchmark/mtp/parallel_1_number_5/
 ```
 
-**排序规则**：SLA 通过 > 请求吞吐 > 输出 token 吞吐 > p50 TTFT > p50 TPOT
+**核心指标**:
+- `benchmark_summary.json` — 汇总 (Output Throughput, TTFT, TPOT, etc.)
+- `benchmark_percentile.json` — 延迟百分位
+- `perf_report.html` — HTML 报告
 
-**预期产出**：
+---
 
+### 4.6 MTP (Multi-Token Prediction) 模式
+
+Qwen3.5-27B 内置 MTP 架构 (1 层 draft model)，启用命令：
+
+```bash
+./scripts/mtp.sh start     # 启动 MTP 服务 (port 18170)
+./scripts/mtp.sh stop      # 停止
+./scripts/mtp.sh status    # 状态
+./scripts/mtp.sh log 0     # 查看 node_0 日志
+./bench.sh mtp 1 5         # MTP benchmark
 ```
-$RUN_ROOT/benchmark/
-├── xllm_results.jsonl
-├── vllm_results.jsonl
-├── comparison/
-│   ├── summary.md          ← 核心对比表
-│   ├── summary.csv
-│   ├── winning-commands.md ← 双方最优命令
-│   └── candidates.jsonl    ← 所有候选
-```
 
-**summary.md 示例**：
+**关键参数**:
+- `--draft_model /home/data/weights/Qwen35-27B-mtp` — MTP draft 权重
+- `--draft_devices npu:N` — 每个节点的 draft device 必须匹配主 device
+- `--num_speculative_tokens 2` — 投机 token 数
+- `--max_concurrent_requests 30`
 
-```markdown
-## Benchmark Summary: Qwen3.5-27B on A3 x4
-
-### Chat 场景 (input=1000, output=1000)
-
-| 框架 | QPS | Output tokens/s | p50 TTFT (ms) | p50 TPOT (ms) | SLA Pass |
-|------|-----|-----------------|---------------|---------------|----------|
-| xLLM best | 32.5 | 32500 | 180 | 28 | Yes |
-| vLLM-Ascend best | 28.1 | 28100 | 220 | 35 | Yes |
-
-### Summary 场景 (input=8000, output=1000)
-
-| 框架 | QPS | Output tokens/s | p50 TTFT (ms) | p50 TPOT (ms) | SLA Pass |
-|------|-----|-----------------|---------------|---------------|----------|
-| xLLM best | 8.2 | 8200 | 450 | 42 | Yes |
-| vLLM-Ascend best | 7.5 | 7500 | 520 | 48 | Yes |
-```
+**已知问题 (2026-05-23)**:
+MTP 模式下 node_1 推理时崩溃，`npu_add_rms_norm` shape 不匹配错误 (error code 561002)。
+可能是 torch_npu 2.7.1.post2 与 xLLM MTP 实现不兼容。
+已向 xLLM 团队上报，等待修复。详见 `xllm-npu-incident-triage` skill。
 
 ---
 
