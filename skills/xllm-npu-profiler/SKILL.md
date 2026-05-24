@@ -202,16 +202,37 @@ python scripts/render_triage_npu.py \
 
 | 检查维度 | 健康值 | 异常信号 |
 |---------|-------|---------|
-| `--num_speculative_tokens` | `nst=1` | `nst>=2` 在 Qwen3.5-27B + 910B3 上实测为严重负优化 |
-| Spec Accept Rate | 47-50% | <40% 表明 draft 质量或 nst 设置不当 |
-| Decoded Tok/Iter | 1.88-1.98 (nst=1 理论最大 2) | <1.5 需检查 draft model 加载 |
-| reserved_linear_bytes | <3 GB (nst=1) | >6 GB 表明 draft+verification 内存压力大 |
-| KV Cache blocks | ≥80% baseline | <60% 表明 draft model 挤占了主 model KV 空间 |
+| `--num_speculative_tokens` | 依 workload 扫描；20k/1k random TP=4 当前为 `nst=3` | 只看 accept rate 选择更大 nst，可能被 draft/verify 开销反噬 |
+| Spec Accept Rate | nst=3 场景约 68-71% | <40% 表明 draft 质量或 nst 设置不当 |
+| Decoded Tok/Iter | nst=3 场景约 3.2-3.4 | 明显低于 nst+1 上限且 TPOT 不降，需检查 draft/verify |
+| reserved_linear_bytes | nst=3 约 4.54 GB | >6 GB 表明 draft+verification 内存压力大 |
+| KV Cache blocks | nst=3 约 3414 blocks | 长上下文或高并发下 blocks 下降会限制容量 |
 | Prefill warmup 时间 | ≤baseline | 2x baseline → draft prefill penalty 主导延迟 |
 
 **关键结论 (Qwen3.5-27B @ 910B3)**:
-- `nst=1`：吞吐 +20-23%，TTFT 零惩罚，TPOT -22%，**推荐使用**
-- `nst=2`：吞吐 -52%，TTFT +77%，**不推荐**（per-token decode 更快但 TTFT 惩罚主导总延迟）
+- 旧 TP=2 / 96 input / 100 output 场景：`nst=1` 最优，`nst=2` 为严重负优化。
+- 当前 TP=4 / random 20k input / 1k output / chunk prefill 场景：`nst=3` 最优；`nst=4/5` accept rate 更高但端到端吞吐下降。
+- MTP 主要改善 decode/TPOT；长 prompt 的 TTFT 仍由 prefill 主导，不应用 TTFT 单独判断 MTP 是否有效。
+
+### 2026-05-25 TP=4 / MTP=3 Profiling 记录
+
+环境：xLLM `f514ad94`，Qwen35-27B + Qwen35-27B-mtp，Phy 8-11，`--enable_chunked_prefill=true`，`--num_speculative_tokens 3`。
+
+Trace:
+- Prefill-focused: `/home/g00510989/xllm/runs/20260524_tp4_random20k_1k/profiling/mtp3_chunk_prefill20k_out1_cards8_11_20260525_000017/PROF_000001_20260525000020794_DBKJLBLHERRILEQB`
+- Decode-focused: `/home/g00510989/xllm/runs/20260524_tp4_random20k_1k/profiling/mtp3_chunk_decode32_out200_cards8_11_20260525_001223/PROF_000001_20260525001226480_GMAQBFHGBIOBQCIC`
+
+Decode-focused 五表要点：
+- Kernel: `MatMulV2` 36.3%, `allreduceAicpuKernel` 31.7%, `Transpose` 9.5%, `allgatherAicpuKernel` 2.4%, `fused_recurrent_gated_delta_rule_spec_fwd_kernel` 1.6%, `_causal_conv1d_update_kernel_npu_tiled_v2` 1.5%.
+- Communication: HCCL 统计中 `hcom_allReduce_` 64.1%, `hcom_allGather_` 35.9%；TP=4 decode 仍有明显通信优化空间。
+- Dispatch/Host: API 统计中 `aclrtSynchronizeStream` + `StreamSynchronize` 合计约 7.35s，`launch` 1.58s，`MemCopySync` 0.64s，小算子与同步开销非常重。
+- Fuse pattern: MTP accept/verify 小算子累计明显，`Transpose` 505ms/36,701 calls、`Pack` 64.8ms/18,792 calls、`Range` 51.6ms/6,126 calls、`SoftmaxV2` 46.9ms/634 calls、`ArgMaxV2` 36.7ms/760 calls。
+- Memory: rank0 日志 `reserved_linear_bytes=4.54 GB`、KV blocks=3414；MTP=3 可接受，但 nst=4/5 线性增加 linear reserve，应谨慎用于更高并发。
+
+优先优化假设：
+1. 先复查/恢复 PR #1536 的 MTP Transpose 消除逻辑。当前源码仍可见 `conv_weight.transpose(0, 1).contiguous()`、`mixed_qkv.transpose(1, 2)`、`run_spec_verify_conv()` 内部 round-trip transpose，profiling 也显示 Transpose 是 MTP 专属大头。
+2. 其次做 MTP accept/verify 逻辑融合，目标是减少 `Range/Pack/Concat/Softmax/ArgMax/Cumsum` 等小 op 和 host sync。
+3. 再评估 TP=4 AllReduce/AllGather overlap 或批量化通信，重点看 decode 阶段 `allreduceAicpuKernel` + HCCL allreduce/allgather 的高占比。
 
 ## 输出契约
 
