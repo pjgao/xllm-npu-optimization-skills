@@ -53,3 +53,16 @@
   - bool-prefix mask：Output TPS 68.69，TPOT 11.71 ms。
 - 对照：transpose-opt baseline Output TPS 69.31，TPOT 11.57 ms。
 - 经验：局部替换 `build_accepted_mask()` 的 eager Torch 小算子不足以带来收益；后续要做 accept/verify，应优先融合为单 kernel 或扩展现有 `kernel::rejection_sample` 路径。
+
+### 有效优化 #4：MTP draft extend 轻量提前准备（P0b）
+- 收益：相对 transpose-opt baseline，Output TPS 69.31→70.18 (+1.3%)，TPOT 11.57→11.39 ms (-1.6%)，Avg Latency 14.03→13.85 s (-1.3%)。
+- 方法：参考 vLLM async schedule 的“target device 计算期间做 draft 侧准备”思路，但保持等价语义，不提前写 draft KV：
+  - `run_validate()` 在 target `step_async(validate_input)` 之后、`future.get()` 之前，提前执行 draft extend 的轻量上下文准备。
+  - 提前覆盖 `base_input.to(device_, dtype_)`、`token_ids/positions/block_tables` CPU view、原始输入 token 缓存等不依赖 validation 输出的工作。
+  - target validation 返回后，只为实际 accept 的 `last_idx` 构造 2-token draft extend 输入并下发 draft model。
+- 反例边界：P0 初版枚举所有可能 `last_idx` 候选，Output TPS 65.75、TPOT 12.46 ms，明显负优化。结论是不能用“枚举未来候选”换重叠，应只提前不依赖 target 输出且成本确定的小准备。
+- 证据：
+  - P0 negative benchmark: `/home/g00510989/xllm/runs/20260525_mtp3_async_draft_p0/perf/random20k_1k_p1_n5/20260525_071955/Qwen35-27B/performance_summary.txt`
+  - P0b benchmark: `/home/g00510989/xllm/runs/20260525_mtp3_async_draft_p0b/perf/random20k_1k_p1_n5/20260525_072650/Qwen35-27B/performance_summary.txt`
+  - Accuracy: GSM8K `limit=10`, `mean_acc=1.0`，`/home/g00510989/xllm/runs/20260525_mtp3_async_draft_p0b/accuracy/gsm8k_limit10/reports/Qwen35-27B/gsm8k.json`
+- 后续方向：真正的 vLLM-style async draft 下发需要引入 shadow/pending draft state 或双缓冲 KV，确保 target validate 与下一轮 draft prefill/extend 可并行且 commit/rollback 精确；P0b 只是低风险第一步。

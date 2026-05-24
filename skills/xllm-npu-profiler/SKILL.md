@@ -289,6 +289,35 @@ Artifact:
 - Bool-prefix benchmark: `/home/g00510989/xllm/runs/20260525_mtp3_smallop_boolprefix/perf/random20k_1k_p1_n5/20260525_013755/Qwen35-27B/performance_summary.txt`
 - 单测：两版均通过 `sampler_test`（11 passed, 2 MLU-only skipped）。
 
+### 2026-05-25 MTP draft extend 提前准备 P0/P0b
+
+目标：参考 vLLM async schedule，让 target 模型 device 计算期间尽量推进 draft 模型下发前置工作，减少 draft extend 空泡。
+
+实现分层：
+- P0 negative：在 target validate async 期间枚举所有可能 `last_idx` 的 draft extend 候选元数据。该方法等价但 CPU 开销过大，拖慢 decode 临界路径。
+- P0b effective：只提前不依赖 target 输出的轻量工作，包括 `base_input.to(device_, dtype_)`、decode CPU view、原始 input token 缓存；target 返回后只为真实 accepted prefix 构造一条 draft extend 输入。
+
+Benchmark 对比（TP=4, Phy 8-11, random 20k/1k, `parallel=1`, `number=5`, chunk prefill, MTP=3）：
+
+| 版本 | Avg Latency(s) | TTFT(ms) | TPOT(ms) | Output TPS | Decoded/Iter | Accept |
+|------|----------------|----------|----------|------------|--------------|--------|
+| transpose-opt baseline | 14.03 | 2471.5 | 11.57 | 69.31 | 3.13 | 68.0% |
+| P0 enumerate candidates | 14.81 | 2358.6 | 12.46 | 65.75 | 2.90 | 65.5% |
+| P0b light prepare | 13.85 | 2466.0 | 11.39 | 70.18 | 3.09 | 67.6% |
+
+精度冒烟：P0b GSM8K `limit=10`，`mean_acc=1.0`，evalscope RC=0。
+
+经验规则：
+- MTP 提前下发/提前准备必须先画出“依赖 target logits/embedding/accepted prefix”的边界；任何依赖这些结果的工作不能在当前等价实现中提前执行。
+- 不要枚举 speculative future 候选来换重叠，尤其是 `num_speculative_tokens + 1` 个候选乘 batch 的 CPU 构图/向量拼接，会直接吃掉 decode 周期。
+- 可以优先提前 `ForwardInput` 复制、CPU view、固定 layout 信息等确定性准备；收益通常小但风险低。
+- 真正的 vLLM-style async draft dispatch 需要 shadow/pending draft KV 或双缓冲，并提供 validate 后的 commit/rollback 机制，否则会破坏 draft KV 与 target accepted prefix 的一致性。
+
+Artifact:
+- P0 negative benchmark: `/home/g00510989/xllm/runs/20260525_mtp3_async_draft_p0/perf/random20k_1k_p1_n5/20260525_071955/Qwen35-27B/performance_summary.txt`
+- P0b benchmark: `/home/g00510989/xllm/runs/20260525_mtp3_async_draft_p0b/perf/random20k_1k_p1_n5/20260525_072650/Qwen35-27B/performance_summary.txt`
+- P0b accuracy: `/home/g00510989/xllm/runs/20260525_mtp3_async_draft_p0b/accuracy/gsm8k_limit10/reports/Qwen35-27B/gsm8k.json`
+
 ## 输出契约
 
 返回：
