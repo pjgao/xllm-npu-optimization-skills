@@ -45,11 +45,36 @@ Agent-ready playbooks for xLLM inference optimization on Huawei Ascend NPU (910B
 
 ```
 xllm-npu-optimization-skills/
+├── AGENTS.md                                # Agent 使用指南
+├── INSTRUCTIONS.md                          # 优化指令模板
+├── README.md                                # 本文档
+│
 ├── docs/                                    # 设计文档
+│   ├── ENVIRONMENT.md                       # 环境配置指南
+│   ├── ai-infra-analysis.md                # AI-Infra 框架分析
+│   ├── environment-info.md                  # 环境信息采集
+│   ├── pr-1536-mtp-transpose-elimination.md # PR #1536 分析
+│   ├── qwen35-27b-optimization-guide.md     # Qwen3.5-27B 优化指南
+│   └── xllm-npu-optimization-design.md      # NPU 优化设计方案
+│
+├── references/                              # 全局引用文件
+│   └── custom-code-style.md                 # xLLM NPU 代码风格指南
+│
+├── humanize/                                # 优化过程台账
+│   ├── attempt-ledger.md                    # 尝试记录
+│   ├── lineage.jsonl                        # 优化族谱
+│   ├── optimization-ledger.md               # 优化台账
+│   └── source-idea-ledger.md                # 优化思路来源
+│
+├── patches/                                 # 补丁文件
+│   ├── qwen3_gated_delta_net_base.cpp       # MTP conv1d 修复补丁
+│   └── qwen3_gated_delta_net_base.h
+│
 ├── skills/                                  # 核心 Skills
 │   ├── xllm-npu-benchmark/                  # 基准测试
 │   │   ├── SKILL.md
 │   │   ├── scripts/
+│   │   │   ├── collect_evalscope_results.py # evalscope 结果收集脚本
 │   │   │   ├── compare_npu_benchmark.py     # 框架对比脚本
 │   │   │   └── validate_framework_cli.py     # CLI 验证脚本
 │   │   └── references/
@@ -63,7 +88,9 @@ xllm-npu-optimization-skills/
 │   │   └── references/
 │   │       ├── npu-fuse-catalog.md          # NPU 融合算子目录
 │   │       ├── npu-overlap-catalog.md       # NPU 重叠机会目录
-│   │       └── ascend-profiling-formats.md  # 昇腾 Profiling 格式说明
+│   │       ├── ascend-profiling-formats.md   # 昇腾 Profiling 格式说明
+│   │       ├── qwen35-27b-kernel-profile.md  # Qwen3.5 kernel profiling 对比
+│   │       └── source-map.md                 # xLLM profiler 源码地图
 │   │
 │   ├── xllm-npu-sota-loop/                  # SOTA 自治优化循环
 │   │   ├── SKILL.md
@@ -96,6 +123,8 @@ xllm-npu-optimization-skills/
     ├── knowledge/
     │   ├── tilelang-patterns.md
     │   └── ascendc-patterns.md
+    ├── references/
+    │   └── a3-specs.md                       # 910B3 (A3) 硬件规格
     └── tools/
         └── npu-op-benchmark.py               # 算子基准测试
 ```
@@ -134,6 +163,6 @@ done
 预期执行路径：
 1. `xllm-npu-benchmark`：建立公平基准
 2. `xllm-npu-profiler`：Profiling 五表分析
-3. `xllm-model-pr-history`：查询历史 PR
+3. `model-pr-optimization-history`：查询历史 PR
 4. `xllm-npu-sota-loop`：RLCR 迭代优化
-5. `xllm-npu-kernel-pilot`：针对热点 kernel 的专项优化
+5. `kernel-pilot`：针对热点 kernel 的专项优化

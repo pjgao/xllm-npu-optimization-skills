@@ -11,7 +11,7 @@
 
 ## 核心原则（必须遵守）
 
-1. ** unfair 数据不比较**：benchmark 阶段必须让 xLLM 和 vLLM-Ascend 各自独立搜索最优配置
+1. **unfair 数据不比较**：benchmark 阶段必须让 xLLM 和 vLLM-Ascend 各自独立搜索最优配置（严禁用一方的最优参数套另一方）
 2. **没 profiling 不动手**：Phase 3 报告不存在前，不允许开始任何 patch
 3. **每步决策有数据支撑**：所有判定必须基于五表中的可复现指标
 4. **RLCR 闭环**：Research → Learn → Code → Review → Validate → Record，严禁"写完就合"
@@ -66,6 +66,12 @@ Phase 5     RLCR 迭代（xllm-npu-sota-loop）
 
 ```bash
 # 基准对比
+python skills/xllm-npu-benchmark/scripts/collect_evalscope_results.py \
+  --root /path/to/evalscope/results \
+  --framework xllm \
+  --output-jsonl xllm.jsonl \
+  --output-summary xllm-summary.md
+
 python skills/xllm-npu-benchmark/scripts/compare_npu_benchmark.py \
   --xllm-results xllm.jsonl --vllm-results vllm.jsonl --output-dir comparison/
 

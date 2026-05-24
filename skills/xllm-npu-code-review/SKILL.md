@@ -168,6 +168,47 @@ git diff $MERGE_BASE..HEAD
 - 对 diff 外的代码给意见
 - 模糊建议（如"改进错误处理"不具体化）
 
+## 真实案例：PR #1536 MTP Transpose 消除
+
+### 背景
+
+`qwen3_gated_delta_net_base.cpp` 中的 MTP (Multi-Token Prediction) 在 A3 上 crash：`causal_conv1d_update_v2 expects width in [1, 6], got 5120`。
+
+### Diff 审查
+
+```cpp
+// qwen3_gated_delta_net_base.cpp L447-449 (weight load)
+auto w = conv1d_->weight();
+w.set_(torch::nn::functional::linear(...).set_data(
+    tensor.set_(w.transpose(0,1).contiguous())));
+conv_weight_transposed_ = tensor.clone();  // 新增：保存原始 [C/tp, k]
+```
+
+```cpp
+// qwen3_gated_delta_net_base.cpp L581, L588 (kernel 调用)
+// 修改前：使用 conv_weight (shape = [k, C/tp])
+// 修改后：使用 conv_weight_transposed_ (shape = [C/tp, k])
+auto conv_out = causal_conv1d_update_v2(x, conv_weight_transposed_, ...);
+```
+
+### 审查结果
+
+#### Critical (已修复)
+- **`qwen3_gated_delta_net_base.cpp:581`** — `conv_weight` 在 `.set_()` 后被改为 `[k, C/tp]`，传给 v2 kernel 时 width=5120 (channels) 而非 width=4 (kernel_size)，导致运行时 crash
+- **修复**: 新增 `conv_weight_transposed_` 成员保存原始 `[C/tp, k]` shape，在 kernel 调用时使用
+
+#### Important
+- **`qwen3_gated_delta_net_base.h:93`** — `conv_weight_transposed_` 声明为 `mutable`，确保 `const` 方法中可修改，但需确认多线程访问安全
+
+#### Minor
+- 建议添加注释说明 `conv_weight_transposed_` 存在的原因（weight shape 在 load 后被 mutate）
+
+### 评估
+
+**是否可以合并？** Yes (after fix)
+
+**理由：** 修复正确解决了 weight shape 传递反转问题，v2 kernel 对 kernel_width ∈ [1,6] 的约束得到满足。
+
 ## 参考资料
 
 按需加载：

@@ -29,15 +29,17 @@ def render_kernel_section(kernels: list, title: str) -> str:
     lines = [
         f"## {title}",
         "",
-        "| Kernel | GPU Time (ms) | GPU % | Count | Avg (ms) | Stage |",
-        "|--------|--------------|-------|-------|----------|-------|",
+        "| Kernel | Device Time (ms) | Device % | Count | Avg (ms) | Core | Stage |",
+        "|--------|------------------|----------|-------|----------|------|-------|",
     ]
     for k in kernels[:20]:
         name = k.get("name", "unknown")[:60]
+        time_ms = k.get("device_time_ms", k.get("gpu_time_ms", 0))
+        time_pct = k.get("device_time_pct", k.get("gpu_time_pct", 0))
         lines.append(
-            f"| {name} | {k.get('gpu_time_ms', 0):.2f} | "
-            f"{k.get('gpu_time_pct', 0):.1f}% | {k.get('count', 0)} | "
-            f"{k.get('avg_time_ms', 0):.4f} | {k.get('stage', 'mixed')} |"
+            f"| {name} | {time_ms:.2f} | {time_pct:.1f}% | {k.get('count', 0)} | "
+            f"{k.get('avg_time_ms', 0):.4f} | {k.get('core_type', 'unknown')} | "
+            f"{k.get('stage', 'mixed')} |"
         )
     return "\n".join(lines)
 
@@ -49,14 +51,17 @@ def render_overlap_section(overlaps: list, title: str) -> str:
     lines = [
         f"## {title}",
         "",
-        "| Compute Kernel | Comm Kernel | Overlap (ms) | Potential (ms) | Stage |",
-        "|---------------|-------------|-------------|---------------|-------|",
+        "| Compute/Comm Kernel | Comm Kernel | Time (ms) | Potential (ms) | Stage |",
+        "|---------------------|-------------|-----------|---------------|-------|",
     ]
     for o in overlaps[:20]:
+        compute = o.get("compute_kernel", o.get("op_type", "unknown"))
+        time_ms = o.get("overlap_ms", o.get("total_time_ms", 0))
+        potential = o.get("potential_ms", o.get("time_pct", 0))
         lines.append(
-            f"| {o.get('compute_kernel', 'unknown')[:40]} | "
+            f"| {compute[:40]} | "
             f"{o.get('comm_kernel', 'unknown')[:40]} | "
-            f"{o.get('overlap_ms', 0):.2f} | {o.get('potential_ms', 0):.2f} | "
+            f"{time_ms:.2f} | {potential:.2f} | "
             f"{o.get('stage', 'mixed')} |"
         )
     return "\n".join(lines)
@@ -86,6 +91,21 @@ def render_fuse_section(fuses: list, title: str) -> str:
 def render_dispatch_section(dispatches: list, title: str) -> str:
     if not dispatches:
         return f"## {title}\n\nNo dispatch data.\n"
+
+    if "stream_id" in dispatches[0]:
+        lines = [
+            f"## {title}",
+            "",
+            "| Stream | Tasks | Task Time (ms) | Avg Wait (ms) | Avg Gap (ms) | Launches/ms |",
+            "|--------|-------|----------------|---------------|--------------|-------------|",
+        ]
+        for d in dispatches[:20]:
+            lines.append(
+                f"| {d.get('stream_id', 'unknown')} | {d.get('task_count', 0)} | "
+                f"{d.get('total_time_ms', 0):.2f} | {d.get('avg_wait_ms', 0):.4f} | "
+                f"{d.get('avg_gap_ms', 0):.4f} | {d.get('launch_density_per_ms', 0):.3f} |"
+            )
+        return "\n".join(lines)
 
     lines = [
         f"## {title}",
@@ -155,7 +175,10 @@ def main():
     sections = [
         render_header(args.model, framework, timestamp),
         render_kernel_section(report.get("kernel_table", []), "1. Kernel Table"),
-        render_overlap_section(report.get("overlap_table", []), "2. Overlap-Opportunity Table"),
+        render_overlap_section(
+            report.get("overlap_table", report.get("communication_table", [])),
+            "2. Communication / Overlap-Opportunity Table",
+        ),
         render_fuse_section(report.get("fuse_table", []), "3. Fuse-Pattern Table"),
         render_dispatch_section(report.get("dispatch_table", []), "4. Dispatch Efficiency Table"),
         render_memory_section(report.get("memory_table", []), "5. Memory Efficiency Table"),

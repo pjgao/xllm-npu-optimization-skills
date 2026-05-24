@@ -87,7 +87,7 @@ def render_markdown_table(title: str, results: list[BenchmarkResult]) -> str:
 
 
 def render_winning_commands(results: list[BenchmarkResult], framework: str) -> str:
-    best = [r for r in results if r.framework == framework and r.sla_pass]
+    best = [r for r in results if r.framework.lower() == framework.lower() and r.sla_pass]
     best = sort_results(best)
     if not best:
         return f"## {framework}: No SLA-passing candidates\n"

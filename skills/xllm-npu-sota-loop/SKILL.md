@@ -252,3 +252,56 @@ Record:   记录到台账
 - `humanize/attempt-ledger.md` — 所有尝试记录
 - `humanize/optimization-ledger.md` — 有效优化总结
 - `patches/` — 所有 patch 文件
+
+## 真实案例：Qwen3.5-27B MTP 优化（2026-05）
+
+### Phase 0 → 初始化
+
+| 参数 | 值 |
+|------|---|
+| 模型 | Qwen3.5-27B |
+| 精度 | bf16 |
+| NPU | 910B3 (A3), TP=2 |
+| CANN | 8.5.0 |
+| artifact root | `/home/g00510989/runs/20260523_qwen35_27b_npu_sota/` |
+
+### Phase 1 → 基准测试
+
+| 配置 | Throughput (tok/s) | TPOT (ms) | TTFT (ms) |
+|------|-------------------|-----------|-----------|
+| Baseline (并发 1) | 29.33 | 29.8 | 3564 |
+| MTP (nst=1) | ~35 | ~25 | - |
+| MTP-transpose (nst=1) | **39.54** | **21.9** | - |
+
+### Phase 2 → 差异判定
+
+MTP-transpose 比 baseline **+35% throughput, -27% TPOT** → 继续优化。
+
+### Phase 3 → Profiling
+
+- baseline / mtp / mtp-transpose 三组完整 NPU profiling
+- 分析 `op_statistic_*.csv` / `op_summary_*.csv` 发现通信和 MatMul 是主要热点
+- MTP crash 根因: `conv_weight` shape `[k, C/tp]` vs v2 kernel 期望 `[C/tp, k]`
+
+### Phase 5 → RLCR Round 1
+
+```
+Research: profiling 显示 MTP conv1d kernel shape 传递错误
+Learn:    查 PR 历史，发现 v2 kernel 对 weight shape 有严格约束
+Code:     qwen3_gated_delta_net_base.cpp L581/588 改用 conv_weight_transposed_
+Review:   code-review skill 确认修复正确性
+Validate: 编译 + 重启 + benchmark
+Record:   attempt-ledger.md #1 → 成功 (+9.5% throughput on MTP)
+```
+
+### 失败实验记录
+
+| 实验 | 方向 | Throughput | 结果 |
+|------|------|-----------|------|
+| A1 chunked_prefill | 调度策略 | ~28 tok/s | 无改善 |
+| B1 memory | 内存优化 | ~28 tok/s | 无改善 |
+| C1 piecewise | CUDA Graph 策略 | ~29 tok/s | 无改善 |
+| D1 no_padding | padding 消除 | ~28 tok/s | 无改善 |
+| E1 batch | batch 策略 | ~29 tok/s | 无改善 |
+
+**结论**: MTP-transpose 是当前最优配置，后续优化应基于此起步。
