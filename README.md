@@ -13,6 +13,7 @@ Agent-ready playbooks for xLLM inference optimization on Huawei Ascend NPU (910B
 - RLCR 驱动的 SOTA 自治优化循环
 - NPU 特化代码审查
 - 生产事故诊断
+- 精度异常定位与 commit 二分
 - PR 驱动模型知识库
 - NPU 内核证据辅助
 
@@ -24,6 +25,7 @@ Agent-ready playbooks for xLLM inference optimization on Huawei Ascend NPU (910B
 | [`xllm-npu-profiler`](skills/xllm-npu-profiler/SKILL.md) | 昇腾 Profiling 五表分析 | `llm-torch-profiler-analysis` |
 | [`xllm-npu-sota-loop`](skills/xllm-npu-sota-loop/SKILL.md) | NPU SOTA 自治优化循环 | `sglang-sota-humanize-loop` |
 | [`xllm-npu-code-review`](skills/xllm-npu-code-review/SKILL.md) | NPU 特化代码审查 | `sglang-humanize-review` |
+| [`xllm-npu-accuracy-debug`](skills/xllm-npu-accuracy-debug/SKILL.md) | 精度异常定位、A/B 验证和 commit 二分 | `sglang-accuracy-debug` |
 | [`xllm-npu-incident-triage`](skills/xllm-npu-incident-triage/SKILL.md) | NPU 生产事故诊断 | `sglang-prod-incident-triage` |
 
 ## 辅助层
@@ -53,6 +55,7 @@ xllm-npu-optimization-skills/
 │   ├── ENVIRONMENT.md                       # 环境配置指南
 │   ├── ai-infra-analysis.md                # AI-Infra 框架分析
 │   ├── environment-info.md                  # 环境信息采集
+│   ├── pr-1400-qwen3-next-weight-transform-race.md # PR #1400 精度定位
 │   ├── pr-1536-mtp-transpose-elimination.md # PR #1536 分析
 │   ├── qwen35-27b-optimization-guide.md     # Qwen3.5-27B 优化指南
 │   └── xllm-npu-optimization-design.md      # NPU 优化设计方案
@@ -103,6 +106,9 @@ xllm-npu-optimization-skills/
 │   │   └── references/
 │   │       ├── npu-code-patterns.md         # NPU 代码模式
 │   │       └── common-pitfalls.md           # 常见陷阱
+│   │
+│   ├── xllm-npu-accuracy-debug/             # 精度异常定位
+│   │   └── SKILL.md
 │   │
 │   └── xllm-npu-incident-triage/            # 生产事故诊断
 │       ├── SKILL.md
