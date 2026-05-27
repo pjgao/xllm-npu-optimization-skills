@@ -241,6 +241,8 @@ Decode-focused 五表要点：
 - spec-verify 分支缓存 `conv_weight_transposed_`，避免每步重复 `conv_weight.transpose(0,1).contiguous()`。
 - `process_mixed_qkv()` 根据输入布局决定是否 transpose。
 
+复盘后的更准确根因：非 MTP decode 路径已经走 `causal_conv1d`，并复用了权重预 reshape/预布局路径，所以不会在每个 decode step 重复做 weight/layout transpose；MTP spec-verify 路径没有复用 `causal_conv1d`，而是手工构造 `CausalConv1dUpdateParams` 调用 `causal_conv1d_update`，因此重新引入了输入输出和 weight layout 适配。当前 transpose-opt 是有效减损，但不是最终结构性修复；下一版应优先尝试让 MTP 复用 `causal_conv1d` 路径或新增等价 fused spec-verify causal conv。
+
 构建补充：当前 CANN op_api 的 `aclnnBeamSearchGroupGetWorkspaceSize()` 多了 `topK` 参数，需在 `beam_search_rec.cpp` 传 `top_tokens.size(-1)` 才能完整链接。
 
 Benchmark 对比（TP=4, Phy 8-11, random 20k/1k, `parallel=1`, `number=5`, chunk prefill, MTP=3）：
