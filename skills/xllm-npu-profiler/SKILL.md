@@ -314,6 +314,7 @@ MTP transpose 专项强制检查：
 - 已知风险点：非 MTP decode 可能走 `causal_conv1d`，并在权重加载/算子封装侧提前完成 weight reshape/预布局；MTP spec-verify 可能走 `causal_conv1d_update`，手工构造 `CausalConv1dUpdateParams`，从而重新引入 input/state/weight layout 适配和 transpose。
 - 对 main、preview 或任何新分支，如果看到 `conv_weight.transpose(0,1).contiguous()`、`mixed_qkv.transpose(1,2)`、`run_spec_verify_conv()` round-trip，只能先标记为“局部症状”；优先尝试让 MTP 复用非 MTP 的 `causal_conv1d` 路径，或新增等价 fused spec-verify causal conv。
 - 报告结论必须区分“局部减损”和“结构性修复”。缓存 weight、删 round-trip transpose 属于局部减损；复用 `causal_conv1d` 或等价 fused 算子才是结构性修复。
+- PR #1536 特别注意：当前 PR 代码（`1d07999f`）是局部 transpose 减损，仍走 `run_spec_verify_conv()` / `causal_conv1d_update`；不能在 PR 描述或复盘中写成已经复用 `causal_conv1d`。
 
 ### 2026-05-25 MTP=3 Transpose 消除验证
 
@@ -325,6 +326,7 @@ MTP transpose 专项强制检查：
 复盘后的更准确根因：非 MTP decode 路径已经走 `causal_conv1d`，并复用了权重预 reshape/预布局路径，所以不会在每个 decode step 重复做 weight/layout transpose；MTP spec-verify 路径没有复用 `causal_conv1d`，而是手工构造 `CausalConv1dUpdateParams` 调用 `causal_conv1d_update`，因此重新引入了输入输出和 weight layout 适配。当前 transpose-opt 是有效减损，但不是最终结构性修复；下一版应优先尝试让 MTP 复用 `causal_conv1d` 路径或新增等价 fused spec-verify causal conv。
 
 2026-05-27 复用路径 prototype 经验：
+- 该 prototype 不是 PR #1536 已合入内容；引用时必须标注为后续方案。
 - 优先复用非 MTP decode 的 `causal_conv1d`，而不是继续局部修补 `causal_conv1d_update` 的 transpose。实现上让 MTP spec-verify 输入/输出保持 `[B,T,C]`，直接使用 `load_common_state_dict()` 中已经预布局的 conv weight。
 - `aclnnCausalConv1d` 的 `query_start_loc/cache_indices/num_accepted_tokens` 是 host `IntArrayRef`，因此 MTP accepted-prefix 需要在 `ModelInputParams` 中保留 host vector；ACL graph capture params 也要同步做 padding。
 - 重要风险：host `IntArrayRef` 在 ACL graph replay 中可能被固化为 capture 属性，而旧 `causal_conv1d_update` 的 accepted-prefix 是 device tensor，可以 replay 动态更新。graph on/off 必须分别做 10 条精度验证；如果 graph replay 下 accepted-prefix 不能动态变化，应改为 fused/tensor 参数算子或保守 fallback。
