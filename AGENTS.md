@@ -83,8 +83,13 @@ python skills/xllm-npu-benchmark/scripts/compare_npu_benchmark.py \
   --xllm-results xllm.jsonl --vllm-results vllm.jsonl --output-dir comparison/
 
 # Profiling 分析
+export PROFILING_MODE=dynamic
+ps -ef | grep xllm
+MODEL=Qwen35-27B TOKENIZER=/home/data/weights/Qwen35-27B PORT=8080 \
+  skills/xllm-npu-profiler/scripts/run_profiling.sh <xllm_parent_pid> profiles/xllm full
+
 python skills/xllm-npu-profiler/scripts/analyze_xllm_npu_profile.py \
-  --framework xllm --url http://127.0.0.1:8080 --output-dir profiles/ --profile-by-stage
+  --input profiles/xllm_YYYYMMDD_HHMMSS/PROF_xxx --framework xllm --output profiles/xllm-analysis.json
 
 # 五表报告渲染
 python skills/xllm-npu-profiler/scripts/render_triage_npu.py \

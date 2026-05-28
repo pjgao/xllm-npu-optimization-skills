@@ -289,11 +289,16 @@ def main():
     parser.add_argument("--framework", default="xllm", choices=["xllm", "vllm-ascend"])
     parser.add_argument("--cutoff", type=float, default=1.0, help="Minimum device-time cutoff (default 1.0%%)")
     parser.add_argument("--output", help="Output JSON path for structured data")
-    parser.add_argument("--url", help="Reserved for live capture mode")
-    parser.add_argument("--output-dir", help="Reserved for live capture mode")
-    parser.add_argument("--num-steps", type=int, default=5)
-    parser.add_argument("--profile-by-stage", action="store_true")
-    parser.add_argument("--profile-workload", choices=["prefill", "decode", "both"], default="both")
+    parser.add_argument("--url", help="Deprecated and ignored; collect with run_profiling.sh first")
+    parser.add_argument("--output-dir", help="Deprecated and ignored; use --output for JSON")
+    parser.add_argument("--num-steps", type=int, default=5, help="Deprecated and ignored")
+    parser.add_argument("--profile-by-stage", action="store_true", help="Deprecated and ignored")
+    parser.add_argument(
+        "--profile-workload",
+        choices=["prefill", "decode", "both"],
+        default="both",
+        help="Deprecated and ignored",
+    )
     parser.add_argument("--mapping-input", help="Mapping trace input (two-trace mode)")
     parser.add_argument("--formal-input", help="Formal trace input (two-trace mode)")
     args = parser.parse_args()

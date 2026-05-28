@@ -198,10 +198,11 @@ Step 6: 结果归一化
 
 ```
 Step 1: Profiling 数据采集
-├── xllm 内置 Profiling：XLLM_PROFILING=1
-├── 昇腾 Profiling：msprof / ascend profiling
-├── 阶段分离：Prefill 和 Decode 分别采集（继承 AI-Infra 原则）
-├── warmup 10 步 + 活跃采集 5 步
+├── xLLM 启动侧：export PROFILING_MODE=dynamic
+├── 采集侧：scripts/run_profiling.sh + msprof --dynamic=on --pid
+├── PID：必须使用 ps -ef | grep xllm 找到的 xLLM 父进程
+├── 阶段分离：Prefill 和 Decode 改 INPUT_TOKENS/OUTPUT_TOKENS 分别采集
+├── 窗口控制：warmup 不采集，formal request 位于 start/stop 之间
 └── 保存 trace 到 artifact/profiles/
 
 Step 2: 全局瓶颈判定

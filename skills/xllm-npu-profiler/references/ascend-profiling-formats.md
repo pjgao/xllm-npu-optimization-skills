@@ -103,10 +103,16 @@ FROM step_trace ORDER BY step_id;
 
 ## 采集方式
 
-### xLLM 内置
+### xLLM dynamic attach
+
+当前 xLLM 源码未发现 `XLLM_PROFILING` 环境变量读取点。xLLM NPU profiling
+优先使用启动侧 `PROFILING_MODE=dynamic`，再通过 `msprof --dynamic=on --pid`
+attach 到 xLLM 父进程并用 `start/stop` 控制采集窗口。
 
 ```bash
-XLLM_PROFILING=1 xllm serve ...
+export PROFILING_MODE=dynamic
+xllm serve ...
+msprof --dynamic=on --pid <xllm_parent_pid> --output /path/to/profiling_output
 ```
 
 ### 昇腾 msprof

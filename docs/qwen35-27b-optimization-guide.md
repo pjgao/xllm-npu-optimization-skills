@@ -452,7 +452,9 @@ gap = (vllm_throughput - xllm_throughput) / vllm_throughput * 100
 
 ```bash
 # xLLM Profiling
-XLLM_PROFILING=1 xllm serve /models/Qwen3.5-27B \
+# 启动 xLLM 前开启动态 profiling 模式
+export PROFILING_MODE=dynamic
+xllm serve /models/Qwen3.5-27B \
   --tensor-parallel-size 4 \
   --graph-mode npugraph_ex \
   --block-size 128 \
@@ -460,13 +462,19 @@ XLLM_PROFILING=1 xllm serve /models/Qwen3.5-27B \
   --chunked-prefill-size 512 \
   --port 8080
 
-# 使用阶段分离采集（推荐）
-python /home/gaopengju/projects/xllm-npu-optimization-skills/skills/xllm-npu-profiler/scripts/analyze_xllm_npu_profile.py \
+# 找到 xLLM 父进程 PID，注意不是 npu-smi 里的 device worker PID
+ps -ef | grep xllm
+
+# 使用 dynamic msprof attach 采集，脚本会先 warmup，再 start/stop 采正式请求
+MODEL=Qwen35-27B TOKENIZER=/home/data/weights/Qwen35-27B PORT=8080 \
+  INPUT_TOKENS=128 OUTPUT_TOKENS=20 \
+  skills/xllm-npu-profiler/scripts/run_profiling.sh <xllm_parent_pid> $RUN_ROOT/profiles/xllm full
+
+# 离线分析导出的 PROF_* 目录
+python skills/xllm-npu-profiler/scripts/analyze_xllm_npu_profile.py \
+  --input $RUN_ROOT/profiles/xllm_YYYYMMDD_HHMMSS/PROF_xxx \
   --framework xllm \
-  --url http://127.0.0.1:8080 \
-  --output-dir $RUN_ROOT/profiles/xllm/ \
-  --num-steps 5 \
-  --profile-by-stage
+  --output $RUN_ROOT/profiles/xllm-analysis.json
 ```
 
 ```bash
@@ -479,11 +487,10 @@ VLLM_WORKER_MULTIPROC_METHOD=spawn vllm serve /models/Qwen3.5-27B \
   --port 8000 \
   --profiler-config '{"profiler":"torch","torch_profiler_dir":"/tmp/vllm-profile"}'
 
-python /home/gaopengju/projects/xllm-npu-optimization-skills/skills/xllm-npu-profiler/scripts/analyze_xllm_npu_profile.py \
+python skills/xllm-npu-profiler/scripts/analyze_xllm_npu_profile.py \
+  --input $RUN_ROOT/profiles/vllm/PROF_xxx \
   --framework vllm-ascend \
-  --url http://127.0.0.1:8000 \
-  --output-dir $RUN_ROOT/profiles/vllm/ \
-  --num-steps 5
+  --output $RUN_ROOT/profiles/vllm-analysis.json
 ```
 
 **重要**：使用慢场景的实际 input/output 长度（summary: input=8000, output=1000），不要用短输入。
@@ -491,7 +498,7 @@ python /home/gaopengju/projects/xllm-npu-optimization-skills/skills/xllm-npu-pro
 ### 6.2 生成五表报告
 
 ```bash
-python /home/gaopengju/projects/xllm-npu-optimization-skills/skills/xllm-npu-profiler/scripts/render_triage_npu.py \
+python skills/xllm-npu-profiler/scripts/render_triage_npu.py \
   --analysis-root $RUN_ROOT/profiles/ \
   --output $RUN_ROOT/analysis/root-cause.md
 ```
@@ -970,10 +977,15 @@ python xllm-npu-optimization-skills/skills/xllm-npu-benchmark/scripts/compare_np
   --xllm-results xllm_results.jsonl --vllm-results vllm_results.jsonl --output-dir comparison/
 
 # === Phase 3: Profiling ===
-XLLM_PROFILING=1 xllm serve /models/Qwen3.5-27B --tensor-parallel-size 4 --graph-mode npugraph_ex --port 8080
+export PROFILING_MODE=dynamic
+xllm serve /models/Qwen3.5-27B --tensor-parallel-size 4 --graph-mode npugraph_ex --port 8080
+ps -ef | grep xllm
+
+MODEL=Qwen35-27B TOKENIZER=/home/data/weights/Qwen35-27B PORT=8080 \
+  xllm-npu-optimization-skills/skills/xllm-npu-profiler/scripts/run_profiling.sh <xllm_parent_pid> profiles/xllm full
 
 python xllm-npu-optimization-skills/skills/xllm-npu-profiler/scripts/analyze_xllm_npu_profile.py \
-  --framework xllm --url http://127.0.0.1:8080 --output-dir profiles/xllm/ --profile-by-stage
+  --input profiles/xllm_YYYYMMDD_HHMMSS/PROF_xxx --framework xllm --output profiles/xllm-analysis.json
 
 python xllm-npu-optimization-skills/skills/xllm-npu-profiler/scripts/render_triage_npu.py \
   --analysis-root profiles/ --output analysis/root-cause.md
