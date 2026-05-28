@@ -1,16 +1,20 @@
 # xllm-npu-optimization-skills
 
-Agent-ready playbooks for xLLM inference optimization on Huawei Ascend NPU (910B3/A3).
-
-对标参考仓库：[AI-Infra-Auto-Driven-SKILLS](https://github.com/BBuf/AI-Infra-Auto-Driven-SKILLS)
-竞品对照框架：[vLLM-Ascend](https://github.com/vllm-project/vllm-ascend)
+Agent-ready playbooks for LLM inference optimization on Huawei Ascend NPU
+(910B3/A3), with xLLM as the primary implementation target and vLLM-Ascend /
+SGLang as reusable comparison baselines.
 
 ## 仓库定位
 
-为 xLLM 推理框架在华为昇腾 NPU 910B3 (A3) 上提供：
-- 公平基准测试（xLLM vs vLLM-Ascend）
+为华为昇腾 NPU 910B3 (A3) 上的模型推理优化提供一套可复用的 Agent
+工作流。当前重点服务 xLLM，同时保留对 vLLM-Ascend、SGLang 等推理框架的
+横向对比能力，用于识别框架调度、算子、KV cache、spec decode 和 serving
+路径上的优化机会。
+
+本仓库提供：
+- 公平基准测试（xLLM / vLLM-Ascend / SGLang 等框架）
 - 昇腾 Profiling 五表分析报告
-- RLCR 驱动的 SOTA 自治优化循环
+- RLCR（Research-Learn-Code-Review）驱动的 SOTA 自治优化循环
 - NPU 特化代码审查
 - 生产事故诊断
 - 精度异常定位与 commit 二分
@@ -19,14 +23,14 @@ Agent-ready playbooks for xLLM inference optimization on Huawei Ascend NPU (910B
 
 ## 核心 Skills
 
-| Skill | 说明 | 对标 |
-|-------|------|------|
-| [`xllm-npu-benchmark`](skills/xllm-npu-benchmark/SKILL.md) | xLLM vs vLLM-Ascend 公平基准测试 | `llm-serving-auto-benchmark` |
-| [`xllm-npu-profiler`](skills/xllm-npu-profiler/SKILL.md) | 昇腾 Profiling 五表分析 | `llm-torch-profiler-analysis` |
-| [`xllm-npu-sota-loop`](skills/xllm-npu-sota-loop/SKILL.md) | NPU SOTA 自治优化循环 | `sglang-sota-humanize-loop` |
-| [`xllm-npu-code-review`](skills/xllm-npu-code-review/SKILL.md) | NPU 特化代码审查 | `sglang-humanize-review` |
-| [`xllm-npu-accuracy-debug`](skills/xllm-npu-accuracy-debug/SKILL.md) | 精度异常定位、A/B 验证和 commit 二分 | `sglang-accuracy-debug` |
-| [`xllm-npu-incident-triage`](skills/xllm-npu-incident-triage/SKILL.md) | NPU 生产事故诊断 | `sglang-prod-incident-triage` |
+| Skill | 说明 |
+|-------|------|
+| [`xllm-npu-benchmark`](skills/xllm-npu-benchmark/SKILL.md) | xLLM / vLLM-Ascend / SGLang 等推理框架的公平基准测试 |
+| [`xllm-npu-profiler`](skills/xllm-npu-profiler/SKILL.md) | 昇腾 Profiling 五表分析 |
+| [`xllm-npu-sota-loop`](skills/xllm-npu-sota-loop/SKILL.md) | NPU SOTA 自治优化循环 |
+| [`xllm-npu-code-review`](skills/xllm-npu-code-review/SKILL.md) | NPU 特化代码审查 |
+| [`xllm-npu-accuracy-debug`](skills/xllm-npu-accuracy-debug/SKILL.md) | 精度异常定位、A/B 验证和 commit 二分 |
+| [`xllm-npu-incident-triage`](skills/xllm-npu-incident-triage/SKILL.md) | NPU 生产事故诊断 |
 
 ## 辅助层
 
@@ -40,8 +44,8 @@ Agent-ready playbooks for xLLM inference optimization on Huawei Ascend NPU (910B
 - 华为昇腾 910B3 (A3) NPU
 - HDK Driver >= 25.2.0
 - CANN >= 8.0.RC1
-- xLLM 框架（最新 commit）
-- vLLM-Ascend（对照组，最新 commit）
+- xLLM 框架（主要优化目标，建议使用待验证 commit）
+- vLLM-Ascend、SGLang 或其他 OpenAI API 兼容推理服务（可选对照组）
 
 ## 目录结构
 
@@ -53,7 +57,7 @@ xllm-npu-optimization-skills/
 │
 ├── docs/                                    # 设计文档
 │   ├── ENVIRONMENT.md                       # 环境配置指南
-│   ├── ai-infra-analysis.md                # AI-Infra 框架分析
+│   ├── ai-infra-analysis.md                # Agent 技能体系设计参考
 │   ├── environment-info.md                  # 环境信息采集
 │   ├── pr-1400-qwen3-next-weight-transform-race.md # PR #1400 精度定位
 │   ├── pr-1536-mtp-transpose-elimination.md # PR #1536 分析
@@ -160,10 +164,10 @@ done
 
 直接复制目标 skill 目录到 agent 工作目录。
 
-## 运行 RLCR 优化循环的快速示例
+## 运行 RLCR（Research-Learn-Code-Review）优化循环的快速示例
 
 ```text
-> 在 Qwen3-32B 上，xLLM 与 vLLM-Ascend 在 A3 NPU 上做 SOTA 对比优化
+> 在 Qwen3-32B 上，对 xLLM、vLLM-Ascend、SGLang 在 A3 NPU 上做 SOTA 对比优化
 ```
 
 预期执行路径：
