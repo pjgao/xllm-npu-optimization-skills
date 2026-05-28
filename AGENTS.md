@@ -7,7 +7,7 @@ xLLM、vLLM-Ascend、SGLang NPU 后端等多框架。Agent 在协助任何 NPU
 
 ## 仓库定位
 
-- 对标仓库：AI-Infra-Auto-Driven-SKILLS
+- 仓库目标：沉淀 NPU 大模型推理和 AI Infra 开发的证据驱动标准流程
 - 框架范围：xLLM、vLLM-Ascend、SGLang NPU 后端
 - 对照原则：按任务选择对照框架；默认优先做 xLLM vs vLLM-Ascend，也允许扩展到 SGLang NPU
 - 目标模型：NPU serving 上的主流推理模型（Qwen3 / DeepSeek-V3 / GLM-5 / Llama / Kimi 等）

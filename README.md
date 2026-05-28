@@ -5,7 +5,6 @@ Huawei Ascend NPU (910B3/A3), with xLLM as the first fully recorded landing
 case and vLLM-Ascend / SGLang as reusable comparison baselines and shared
 workflow targets.
 
-对标参考仓库：[AI-Infra-Auto-Driven-SKILLS](https://github.com/BBuf/AI-Infra-Auto-Driven-SKILLS)
 主要框架目标：[xLLM](https://github.com/jd-opensource/xllm)、[vLLM-Ascend](https://github.com/vllm-project/vllm-ascend)、SGLang NPU 后端
 
 ## 仓库定位
@@ -23,7 +22,7 @@ SOTA loop。
 |------|------|---------|
 | xLLM | 首个完整落地框架 | 已有 benchmark、profiling、patch、MTP 优化和事故记录 |
 | vLLM-Ascend | 公平对照与共同优化目标 | 已作为 benchmark 对照组，后续补 profiler/capacity/incident 适配 |
-| SGLang NPU | 扩展目标 | 复用 BBuf/SGLang GPU SKILLS 思路，迁移到 NPU 后端 |
+| SGLang NPU | 扩展目标 | 复用本仓库的 NPU 证据标准和框架适配层，逐步补齐后端经验 |
 
 因此，本仓库提供：
 - 多框架公平基准测试（xLLM / vLLM-Ascend / SGLang NPU）
@@ -37,18 +36,18 @@ SOTA loop。
 - NPU 内核证据辅助（TileLang / AscendC / Triton-Ascend）
 
 通用流程详见：[通用 NPU 大模型推理与 AI Infra 开发工作流](docs/npu-ai-infra-standard-workflow.md)。
-与 BBuf 原仓库的差距和实现计划详见：[待实现能力与路线规划](docs/implementation-roadmap-vs-ai-infra-skills.md)。
+后续实现计划详见：[待实现能力与路线规划](docs/implementation-roadmap.md)。
 
 ## 核心 Skills
 
-| Skill | 说明 | 对标 |
-|-------|------|------|
-| [`xllm-npu-benchmark`](skills/xllm-npu-benchmark/SKILL.md) | NPU 多框架公平基准测试；当前覆盖 xLLM vs vLLM-Ascend，规划扩展 SGLang NPU | `llm-serving-auto-benchmark` |
-| [`xllm-npu-profiler`](skills/xllm-npu-profiler/SKILL.md) | 昇腾 Profiling 五表分析；当前以 xLLM trace 为主，规划统一多框架产物 schema | `llm-torch-profiler-analysis` |
-| [`xllm-npu-sota-loop`](skills/xllm-npu-sota-loop/SKILL.md) | NPU SOTA 自治优化循环；以 xLLM 为首个 target，流程可迁移到 vLLM-Ascend / SGLang | `sglang-sota-humanize-loop` |
-| [`xllm-npu-code-review`](skills/xllm-npu-code-review/SKILL.md) | NPU 特化代码审查；覆盖 C++ engine、图模式、KV Cache、HCCL、TileLang/AscendC | `sglang-humanize-review` |
-| [`xllm-npu-accuracy-debug`](skills/xllm-npu-accuracy-debug/SKILL.md) | 精度异常定位、A/B 验证和 commit 二分 | `sglang-accuracy-debug` |
-| [`xllm-npu-incident-triage`](skills/xllm-npu-incident-triage/SKILL.md) | NPU 生产事故诊断与 replay-first 排障 | `sglang-prod-incident-triage` |
+| Skill | 说明 | 关键产物 |
+|-------|------|---------|
+| [`xllm-npu-benchmark`](skills/xllm-npu-benchmark/SKILL.md) | NPU 多框架公平基准测试；当前覆盖 xLLM vs vLLM-Ascend，规划扩展 SGLang NPU | `candidates.jsonl` / `summary.md` / `winning-commands.md` |
+| [`xllm-npu-profiler`](skills/xllm-npu-profiler/SKILL.md) | 昇腾 Profiling 五表分析；当前以 xLLM trace 为主，规划统一多框架产物 schema | kernel / overlap / fuse / dispatch / memory 五表 |
+| [`xllm-npu-sota-loop`](skills/xllm-npu-sota-loop/SKILL.md) | NPU SOTA 自治优化循环；以 xLLM 为首个 target，流程可迁移到 vLLM-Ascend / SGLang | run manifest / refined plan / RLCR ledger |
+| [`xllm-npu-code-review`](skills/xllm-npu-code-review/SKILL.md) | NPU 特化代码审查；覆盖 C++ engine、图模式、KV Cache、HCCL、TileLang/AscendC | 分级 review finding |
+| [`xllm-npu-accuracy-debug`](skills/xllm-npu-accuracy-debug/SKILL.md) | 精度异常定位、A/B 验证和 commit 二分 | accuracy report / bisect notes |
+| [`xllm-npu-incident-triage`](skills/xllm-npu-incident-triage/SKILL.md) | NPU 生产事故诊断与 replay-first 排障 | incident bundle / replay report |
 
 ## 辅助层
 
@@ -75,15 +74,13 @@ xllm-npu-optimization-skills/
 │
 ├── docs/                                    # 设计文档
 │   ├── ENVIRONMENT.md                       # 环境配置指南
-│   ├── ai-infra-analysis.md                # Agent 技能体系设计参考
 │   ├── environment-info.md                  # 环境信息采集
-│   ├── implementation-roadmap-vs-ai-infra-skills.md # 对标 BBuf 原仓库的实现路线
+│   ├── implementation-roadmap.md            # 仓库实现路线
 │   ├── npu-ai-infra-standard-workflow.md    # 通用 NPU AI Infra 标准流程
 │   ├── pr-1400-qwen3-next-weight-transform-race.md # PR #1400 精度定位
 │   ├── pr-1536-mtp-transpose-elimination.md # PR #1536 分析
 │   ├── pr-1541-mtp-draft-overlap-minimal-validation.md # PR #1541 最小验证
 │   ├── qwen35-27b-optimization-guide.md     # Qwen3.5-27B 优化指南
-│   ├── zhihu-bbuf-skill-repo-analysis.md    # BBuf 文章与本仓库逻辑分析
 │   └── xllm-npu-optimization-design.md      # NPU 优化设计方案
 │
 ├── references/                              # 全局引用文件

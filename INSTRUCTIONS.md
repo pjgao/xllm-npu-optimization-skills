@@ -36,9 +36,8 @@ xLLM、vLLM-Ascend、SGLang NPU 后端共用的一套标准流程：统一 bench
 |------|------|------|
 | AGENTS.md | `./AGENTS.md` | AI 助手必读，含标准工作流与反模式 |
 | 通用 NPU 标准流程 | `docs/npu-ai-infra-standard-workflow.md` | 多框架通用定位、Phase 定义、适配层原则 |
-| 实现路线图 | `docs/implementation-roadmap-vs-ai-infra-skills.md` | 对标 BBuf 原仓库后的缺口与阶段规划 |
+| 实现路线图 | `docs/implementation-roadmap.md` | 仓库待补能力与阶段规划 |
 | 设计文档 | `docs/xllm-npu-optimization-design.md` | 仓库设计原理与 6-Phase 路线图 |
-| 竞品分析 | `docs/ai-infra-analysis.md` | xLLM 与 vLLM-Ascend 能力对比 |
 | Qwen3.5-27B 实战 | `docs/qwen35-27b-optimization-guide.md` | 端到端优化案例（含 5 表解读示例） |
 
 ## 仓库结构约定

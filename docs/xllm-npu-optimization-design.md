@@ -3,7 +3,7 @@
 > 设计日期：2026-05-23
 > 目标硬件：华为昇腾 910B3 (A3)，HDK Driver 25.2.0+
 > 竞品对照：vLLM-Ascend
-> 参考资料：AI-Infra-Auto-Driven-SKILLS、awesome-ascend-skills、xllm 技术报告 (arXiv:2510.14686)
+> 参考资料：昇腾 NPU 推理优化经验、xLLM 技术报告 (arXiv:2510.14686)
 
 ---
 
@@ -84,7 +84,7 @@ SGLang NPU 共用的 NPU 大模型推理和 AI Infra 开发工作流”。扩展
 
 ## 2. 优化方案总体架构
 
-### 2.1 设计原则（继承自 AI-Infra-Auto-Driven-SKILLS）
+### 2.1 设计原则
 
 1. **证据驱动**：所有优化决策必须有 benchmark 数据 + profiling trace + PR 历史
 2. **阶段分离**：Prefill 和 Decode profiling 分开采集

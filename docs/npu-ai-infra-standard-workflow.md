@@ -18,7 +18,7 @@ history 查询和 SOTA loop。
 |---|---|---|
 | 一等支持 | xLLM | 当前主要落地框架，已有真实优化案例、patch 和 profiling 记录 |
 | 一等对照 | vLLM-Ascend | 公平 benchmark 对照组，也应逐步支持 profiler、capacity、incident 能力 |
-| 扩展支持 | SGLang NPU | 借鉴 BBuf/SGLang GPU SKILLS 的流程，逐步迁移到 NPU 后端 |
+| 扩展支持 | SGLang NPU | 按本仓库的 NPU 证据标准和框架适配层逐步补齐后端经验 |
 
 因此，仓库当前 skill 名称保留 `xllm-npu-*`，但新增能力应尽量把
 **NPU 通用流程** 和 **框架适配层** 分开：
@@ -59,8 +59,8 @@ Phase 6     记录、复盘、沉淀为知识库
 
 - xLLM：查 `model-pr-optimization-history/xllm/`。
 - vLLM-Ascend：后续应新增 `model-pr-optimization-history/vllm-ascend/`。
-- SGLang NPU：后续应新增 `model-pr-optimization-history/sglang/` 或引用
-  BBuf 原仓库中已有 SGLang model dossier。
+- SGLang NPU：后续应新增 `model-pr-optimization-history/sglang/`，沉淀
+  SGLang NPU 后端相关 model dossier。
 
 输出应写入：
 
