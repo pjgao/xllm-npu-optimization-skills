@@ -266,3 +266,65 @@ msprof 动态采集尝试：
 4. 对 MTP=3 采集 profiling，重点看 draft extend preparation overlap 是否减少 host/device 空泡，同时确认是否引入新的同步点。
 5. 若 profiling 不能证明空泡减少，或 A/B 仍无吞吐/TPOT 正收益，应撤回或重做该调度提交。
 6. 若官方 Preview 已完全回退 TileLang 算子，验证日志中不应再依赖 fused TileLang kernel；否则需要把小算子状态作为结果解释的一部分。
+
+## 2026-05-28 evalscope 复测记录
+
+本轮按 skill 中的 evalscope 路径重新验证 TP=4、chunk prefill、MTP=3：
+
+- 物理 NPU：12, 13, 14, 15
+- target：`/home/data/weights/Qwen35-27B`
+- draft：`/home/data/weights/Qwen35-27B-mtp`
+- 关键参数：`--enable_chunked_prefill=true`、`--max_tokens_per_chunk_for_prefill=256`、`--enable_schedule_overlap=true`、`--enable_graph=true`、`--num_speculative_tokens 3`
+- 性能目录：`/home/g00510989/xllm/runs/20260528_evalscope_validation/perf/mtp3_random20k_1k_p1_n5/20260528_075302/Qwen35-27B`
+- 精度目录：`/home/g00510989/xllm/runs/20260528_evalscope_validation/accuracy/gsm8k_limit10_max2048_temp0`
+- no-MTP 对照精度目录：`/home/g00510989/xllm/runs/20260528_evalscope_validation/accuracy/no_mtp_gsm8k_limit10_max2048_temp0`
+
+### random 20k/1k 性能结果
+
+| 指标 | 2026-05-28 MTP=3 | 2026-05-24 MTP=3 基线 | 变化 |
+|------|------------------|-----------------------|------|
+| Success | 5/5 | - | - |
+| Avg Latency | 12.39s | 14.564s | -14.9% |
+| TTFT | 2333.48ms | 2524.8ms | -7.6% |
+| TPOT | 10.07ms | 12.05ms | -16.4% |
+| Output TPS | 78.16 tok/s | 66.82 tok/s | +17.0% |
+| Decode TPS | 99.30 tok/s | 82.99 tok/s | +19.7% |
+| Decoded Tok/Iter | 3.36 | 3.21 | +4.7% |
+| Spec Accept Rate | 70.2% | 68.8% | +1.4pp |
+
+和历史 no-MTP 基线相比，MTP=3 仍有明显收益：Output TPS 78.16 vs 46.39（+68.5%），TPOT 10.07ms vs 18.67ms（-46.1%），Avg Latency 12.39s vs 21.155s（-41.4%）。
+
+### GSM8K limit=10 精度复测
+
+先按历史精度配置尝试 `max_tokens=30000`、`temperature=0.6`、`enable_thinking=true`，但首条样本耗时接近 593s，预计完整 10 条会超过 1 小时，因此中止并保留日志。
+
+随后用 evalscope 同一 GSM8K `limit=10`，将生成配置收紧为 `max_tokens=2048`、`temperature=0.0` 做快速复核：
+
+| 模式 | mean_acc | Avg Lat | TTFT | TPOT | Avg Out Tok |
+|------|----------|---------|------|------|-------------|
+| MTP=3 | 0.4 | 20.73s | 246.27ms | 11.12ms | 1834.0 |
+| no MTP | 0.6 | 34.97s | 504.36ms | 18.27ms | 1886.3 |
+
+这组精度结果不能作为“精度通过”证据，原因是两组平均输出 token 都接近 2048 上限，预测文件中能看到重复生成和截断迹象，答案抽取容易被截断影响。结论应表述为：evalscope 精度链路跑通，但当前 quick accuracy 配置无效；如果要给 PR 或优化结论背书，需要使用不截断的 GSM8K 配置、或选用输出更短且可稳定抽取的 10 条精度集重新验证。
+
+### MTP 接受率与精度风险判断
+
+本轮 random 20k/1k 的 MTP=3 接受率为 70.2%，历史 2026-05-24 MTP=3 基线为 68.8%，变化为 +1.4pp；Decoded Tok/Iter 为 3.36，历史基线为 3.21，变化为 +4.7%。这两个指标没有出现下降或异常抖动。
+
+MTP 接受率是判断 draft/target 一致性的直接信号之一：如果主模型输出分布或 draft 校验路径出现明显精度问题，通常会先表现为 speculative accept rate、decoded token per iteration、或请求输出长度/停止原因异常。因此在本轮性能 workload 中接受率基本稳定，说明主模型精度大概率没有因为该调度/算子路径发生明显变化。
+
+但接受率不能完全替代任务精度验证。最终表述建议为：MTP 接受率未见异常，支持“主模型精度大概率稳定”；GSM8K quick run 因输出截断和重复生成不能作为严格精度通过证据，后续仍需要一组不截断、可稳定抽取答案的 10 条精度验证作为 PR 背书。
+
+### 复盘：为什么之前没有及时发现
+
+1. 过度依赖 GSM8K `mean_acc`，没有先检查生成长度、截断率、预测文本和 stop reason。`max_tokens=2048` 的 quick run 看似完成了 10 条，但平均输出 token 已接近上限，预测文本存在重复生成，这种分数不能直接解释为模型精度变化。
+2. 没有把 MTP 接受率作为精度 sanity check 的第一层信号。对 MTP 优化而言，accept rate 和 decoded token per iteration 比 GSM8K 小样本分数更贴近 draft/target 校验路径；接受率稳定时，应优先判断为“投机路径一致性未明显变坏”，再用任务精度补充确认。
+3. 没有立即做 no-MTP 同配置对照。MTP=3 quick accuracy 为 0.4 时，只有和 no-MTP 同配置的 0.6 对照放在一起，才能看出主要问题可能来自评测生成配置/答案抽取，而不是直接归因于 MTP 改动。
+4. 对历史精度配置的运行时成本预估不足。`max_tokens=30000 + enable_thinking` 在 GSM8K 上单样本可能接近 10 分钟，应提前标注这是严格验证配置，不适合临时 sanity；quick sanity 需要另选短输出数据集或限制样本。
+
+后续避免方式：
+
+- MTP 性能验证报告必须同时记录 `Spec Accept Rate`、`Decoded Tok/Iter`、输出 token 分布和请求成功率。
+- 任何 `mean_acc` 异常都必须先检查预测文件、输出长度是否撞上 `max_tokens`、是否有重复生成或答案抽取失败，再判断是否是模型精度问题。
+- 精度 sanity 至少包含同配置 no-MTP 对照；如果 MTP/no-MTP 都异常，优先排查 evalscope 配置、模板、采样参数和抽取逻辑。
+- PR 结论里区分三类证据：接受率稳定、任务精度通过、性能收益成立，不能把其中一个替代另外两个。

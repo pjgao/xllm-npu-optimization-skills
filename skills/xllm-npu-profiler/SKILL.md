@@ -230,9 +230,15 @@ Decode-focused 五表要点：
 - Memory: rank0 日志 `reserved_linear_bytes=4.54 GB`、KV blocks=3414；MTP=3 可接受，但 nst=4/5 线性增加 linear reserve，应谨慎用于更高并发。
 
 优先优化假设：
-1. 先复查/恢复 PR #1536 的 MTP Transpose 消除逻辑。当前源码仍可见 `conv_weight.transpose(0, 1).contiguous()`、`mixed_qkv.transpose(1, 2)`、`run_spec_verify_conv()` 内部 round-trip transpose，profiling 也显示 Transpose 是 MTP 专属大头。
+1. 先做非 MTP decode 与 MTP spec-verify 的路径级 diff，再决定是否改局部 transpose。重点检查两条路径是否复用同一个 causal conv wrapper、同一套 weight 预布局、同一套输入/输出 layout contract。
 2. 其次做 MTP accept/verify 逻辑融合，目标是减少 `Range/Pack/Concat/Softmax/ArgMax/Cumsum` 等小 op 和 host sync。
 3. 再评估 TP=4 AllReduce/AllGather overlap 或批量化通信，重点看 decode 阶段 `allreduceAicpuKernel` + HCCL allreduce/allgather 的高占比。
+
+MTP transpose 专项强制检查：
+- 如果 `Transpose` 主要出现在 MTP/speculative 路径，不能先直接修改 `transpose()` 调用点；必须先对比非 MTP decode 路径。
+- 已知风险点：非 MTP decode 可能走 `causal_conv1d`，并在权重加载/算子封装侧提前完成 weight reshape/预布局；MTP spec-verify 可能走 `causal_conv1d_update`，手工构造 `CausalConv1dUpdateParams`，从而重新引入 input/state/weight layout 适配和 transpose。
+- 对 main、preview 或任何新分支，如果看到 `conv_weight.transpose(0,1).contiguous()`、`mixed_qkv.transpose(1,2)`、`run_spec_verify_conv()` round-trip，只能先标记为“局部症状”；优先尝试让 MTP 复用非 MTP 的 `causal_conv1d` 路径，或新增等价 fused spec-verify causal conv。
+- 报告结论必须区分“局部减损”和“结构性修复”。缓存 weight、删 round-trip transpose 属于局部减损；复用 `causal_conv1d` 或等价 fused 算子才是结构性修复。
 
 ### 2026-05-25 MTP=3 Transpose 消除验证
 

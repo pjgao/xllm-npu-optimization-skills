@@ -65,6 +65,12 @@ git diff $MERGE_BASE..HEAD
 - `DISPATCH_SCHEMA` 和 `SPECIALIZATIONS` 是否匹配
 - 是否使用生成的 `make_<kernel>_specialization(...)` 而非手写
 
+**MTP / Speculative 专属路径**：
+- 如果热点或改动只出现在 MTP/spec-verify 路径，先与非 MTP decode 做路径级 diff，不要直接修局部 `transpose`/`contiguous`。
+- Qwen3.5 GatedDeltaNet 已知模式：非 MTP decode 使用 `causal_conv1d` 并复用 weight 预 reshape/预布局；MTP spec-verify 若使用 `causal_conv1d_update` 并手工构造 params，容易重新引入 input/state/weight layout 适配和 transpose。
+- review 时看到 `run_spec_verify_conv()`、`CausalConv1dUpdateParams`、`conv_weight.transpose(0,1).contiguous()`、`mixed_qkv.transpose(1,2)`，必须追问为什么不能复用非 MTP 的 `causal_conv1d` 路径或等价 fused spec-verify causal conv。
+- PR 结论要标明这是“局部减损”还是“结构性修复”；只减少 transpose 调用不等于已经修复根因。
+
 **语义保持**（Triton → TileLang 转换时）：
 - 控制流、masked、参数语义是否保持
 - 比较操作是否正确使用 `T.tile.compare`（产生 bit mask 而非 float tensor）
