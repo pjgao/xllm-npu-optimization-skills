@@ -241,6 +241,33 @@ PR #1496 修复高并发下 linear state block 预留不足问题。最初代码
 - 在 LLM/VLM engine 组装 `KVCacheEstimateOptions` 时，从 `ServiceConfig` 读取并传入 `estimate_kv_cache_capacity()`。
 - 保留 `KVCacheEstimateOptions::max_concurrent_requests`，因为这是容量估算函数的显式输入，不是配置 owner。
 - 不把 `max_concurrent_requests` 放入 `SchedulerConfig` 的 option category、property、from_flags/from_json 或 config dump。
+- 除了 engine 入口，还要全局搜索所有 `max_concurrent_requests` 读取路径，特别是 `BlockManagerPool` 这类 fallback/default path；只改 LLM/VLM estimate path 会导致编译或运行路径残留旧 owner。
+
+### 提交门禁
+
+修复 review 意见后，不能只看 PR 描述或 comment 是否更新。GitHub comment/description 更新与代码 push 是两条链路，必须单独确认远端代码：
+
+```bash
+# 在唯一权威 PR worktree 中确认状态
+git status --short
+git branch --show-current
+git log -1 --oneline
+
+# 编译和 UT 必须用一次完整命令跑完
+python setup.py build test --device npu
+
+# push 后确认 fork 分支和 PR head 已指向预期 commit
+git ls-remote <fork-remote> refs/heads/<pr-branch>
+git ls-remote origin refs/pull/<pr-id>/head
+
+# 关键文件可直接从远端 ref 校验，避免本地 worktree 误判
+git fetch origin pull/<pr-id>/head:refs/tmp/pr-<pr-id>
+git show refs/tmp/pr-<pr-id>:xllm/core/framework/config/scheduler_config.cpp | grep max_concurrent_requests
+```
+
+若存在多个 worktree，先清理临时 CI/实验 worktree，或明确哪一个是“权威 PR
+worktree”。不要从过期 worktree 直接 push，也不要把本地旧 commit 当作远端 PR
+当前状态。
 
 ### 复盘结论
 

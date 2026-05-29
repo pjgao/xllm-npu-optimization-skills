@@ -142,6 +142,16 @@ Research → Learn → Code → Review → Validate → Record
 - Validate：编译、单测、精度、benchmark、profiling。
 - Record：写 attempt ledger、optimization ledger、lineage。
 
+#### PR 提交门禁
+
+Validate 阶段通过后再提交 PR。对于 xLLM NPU 改动，默认门禁是：
+
+- 在唯一权威 PR worktree 中执行，先确认 `git status --short` 无非预期修改。
+- 编译前执行 `git submodule update --init --recursive`，并确认没有其他编译/测试进程写同一 build 目录。
+- 使用 `python setup.py build test --device npu` 一次完成编译和 UT；不要把单独 build 成功当成提交通过。
+- push 后核对 fork branch 与 PR head commit；PR 描述、检视意见回复和代码 push 必须分别确认。
+- 对关键 review 文件从远端 PR ref 读取复查，避免本地多个 worktree 造成误判。
+
 ### Phase 6：沉淀
 
 有效经验必须回写：

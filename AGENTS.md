@@ -154,15 +154,21 @@ python -m sglang.launch_server \
 ## 编译与测试
 
 ```bash
-# xLLM NPU 构建
-python setup.py build --device npu
-
-# xLLM 单元测试
-python setup.py test --device npu
+# xLLM NPU 构建 + 单元测试提交门禁
+python setup.py build test --device npu
 
 # xLLM 端到端精度测试
 python test/test_xllm_serve_generation.py --model /models/<MODEL> --device npu
 ```
+
+提交 xLLM PR 前必须完成：
+
+1. 在唯一权威 PR worktree 中确认 `git status --short` 无非预期修改。
+2. 执行 `git submodule update --init --recursive`，确认依赖已更新。
+3. 确认没有其他同仓库编译/测试进程在写同一 build 目录。
+4. 执行 `python setup.py build test --device npu`，编译和 UT 全部通过后再提交。
+5. push 后分别确认 fork 分支和 PR head 指向预期 commit；PR 描述或检视回复更新不代表代码已推到 PR。
+6. 对关键 review 点，用远端 PR ref 的文件内容复查，避免本地 worktree 误判。
 
 ## lint / typecheck
 
