@@ -214,11 +214,15 @@ Record:   记录到台账
 ### 验证要求
 
 每轮 patch 后：
-1. 编译通过：`python setup.py build --device npu`
-2. 单元测试通过：`python setup.py test --device npu`
-3. 重新运行 benchmark winning-commands
-4. 重新采集 profiling
-5. 对比前后的五表报告
+1. 拉取 PR 分支后，构建前先完成环境门禁：
+   - 执行 `git submodule update --init --recursive`，确认依赖已同步到主仓记录的 commit。
+   - 执行 `git status --short`，必须无主仓修改、无子模块 `m`/`M`/`+`/`-` 状态；若有变动，先定位来源，不直接编译。
+   - 执行 `pgrep -af 'setup.py|cmake|make|ninja|tilelang|submodule--helper|git submodule'`，确认没有其他正在进行的编译、子模块更新或可能污染 build 目录的冲突进程。
+2. 编译通过：`python setup.py build --device "npu"`
+3. 单元测试通过：`python setup.py test --device "npu"`；需要合并验证时可使用 `python setup.py build test --device "npu"`。
+4. 重新运行 benchmark winning-commands
+5. 重新采集 profiling
+6. 对比前后的五表报告
 
 ### 内核优化准入条件
 
